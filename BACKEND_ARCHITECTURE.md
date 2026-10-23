@@ -629,138 +629,139 @@ model Settings {
 ## Phase 6 — NestJS Architectural Layout
 
 ```text
-backend/
-├── prisma/
-│   ├── schema.prisma  (Database blueprint like design )
-│   └── seed.ts
-├── src/
-│   ├── app.module.ts
-│   ├── main.ts
-│   │
-│   ├── common/
-│   │   ├── decorators/
-│   │   │   ├── current-user.decorator.ts
-│   │   │   └── roles.decorator.ts
-│   │   ├── filters/
-│   │   │   ├── http-exception.filter.ts
-│   │   │   └── prisma-exception.filter.ts
-│   │   ├── guards/
-│   │   │   ├── jwt-auth.guard.ts
-│   │   │   └── roles.guard.ts
-│   │   └── pipes/
-│   │       └── validation.pipe.ts
-│   │
-│   ├── prisma/
-│   │   ├── prisma.module.ts
-│   │   └── prisma.service.ts
-│   │
-│   ├── auth/
-│   │   ├── auth.module.ts
-│   │   ├── auth.controller.ts
-│   │   ├── auth.service.ts
-│   │   ├── strategies/jwt.strategy.ts
-│   │   └── dto/
-│   │       ├── login.dto.ts
-│   │       └── change-password.dto.ts
-|   |
-│   ├── users/
-│   │   ├── users.module.ts
-│   │   ├── users.controller.ts
-│   │   ├── users.service.ts
-│   │   └── dto/
-│   │       ├── create-user.dto.ts
-│   │       └── update-user.dto.ts
-│   │
-│   ├── issues/
-│   │   ├── issues.module.ts
-│   │   ├── issues.controller.ts
-│   │   ├── issues.service.ts
-│   │   └── dto/
-│   │       ├── create-issue.dto.ts
-│   │       ├── update-issue.dto.ts
-│   │       ├── escalate-issue.dto.ts
-│   │       ├── update-status.dto.ts
-│   │       └── query-issues.dto.ts
-│   │
-│   ├── comments/
-│   │   ├── comments.module.ts
-│   │   ├── comments.controller.ts
-│   │   ├── comments.service.ts
-│   │   └── dto/
-│   │       ├── create-comment.dto.ts
-│   │       └── update-comment.dto.ts
-│   │
-│   ├── attachments/
-│   │   ├── attachments.module.ts
-│   │   ├── attachments.controller.ts
-│   │   ├── attachments.service.ts
-│   │   └── dto/create-attachment.dto.ts
-│   │
-│   ├── projects/
-│   │   ├── projects.module.ts
-│   │   ├── projects.controller.ts
-│   │   ├── projects.service.ts
-│   │   └── dto/
-│   │       ├── create-project.dto.ts
-│   │       └── update-project.dto.ts
-│   │
-│   ├── sprints/
-│   │   ├── sprints.module.ts
-│   │   ├── sprints.controller.ts
-│   │   ├── sprints.service.ts
-│   │   └── dto/
-│   │       ├── create-sprint.dto.ts
-│   │       ├── update-sprint.dto.ts
-│   │       └── complete-sprint.dto.ts
-│   │
-│   ├── epics/
-│   │   ├── epics.module.ts
-│   │   ├── epics.controller.ts
-│   │   ├── epics.service.ts
-│   │   └── dto/
-│   │       ├── create-epic.dto.ts
-│   │       └── update-epic.dto.ts
-│   │
-│   ├── notifications/
-│   │   ├── notifications.module.ts
-│   │   ├── notifications.controller.ts
-│   │   └── notifications.service.ts
-│   │
-│   ├── activity/
-│   │   ├── activity.module.ts
-│   │   ├── activity.controller.ts
-│   │   └── activity.service.ts
-│   │
-│   ├── saved-filters/
-│   │   ├── saved-filters.module.ts
-│   │   ├── saved-filters.controller.ts
-│   │   ├── saved-filters.service.ts
-│   │   └── dto/create-filter.dto.ts
-│   │
-│   ├── settings/
-│   │   ├── settings.module.ts
-│   │   ├── settings.controller.ts
-│   │   ├── settings.service.ts
-│   │   └── dto/update-settings.dto.ts
-│   │
-│   ├── search/
-│   │   ├── search.module.ts
-│   │   ├── search.controller.ts
-│   │   └── search.service.ts
-│   │
-│   └── system/
-│       ├── system.module.ts
-│       ├── system.controller.ts
-│       └── system.service.ts
-├── test/
-├── .env
-├── .env.example
-├── package.json
-├── tsconfig.json
-└── tsconfig.build.json
-```
+  backend/
+  ├── prisma/
+  │   ├── schema.prisma  (Database blueprint like design )
+  │   └── seed.ts
+  ├── src/
+  │   ├── app.module.ts
+  │   ├── main.ts
+  │   │
+  │   ├── common/
+  │   │   ├── decorators/
+  │   │   │   ├── current-user.decorator.ts
+  │   │   │   └── roles.decorator.ts
+  │   │   ├── filters/
+  │   │   │   ├── http-exception.filter.ts
+  │   │   │   └── prisma-exception.filter.ts
+  │   │   ├── guards/
+  │   │   │   ├── jwt-auth.guard.ts
+  │   │   │   └── roles.guard.ts
+  │   │   └── pipes/
+  │   │       └── validation.pipe.ts
+  │   │
+  │   ├── prisma/
+  │   │   ├── prisma.module.ts
+  │   │   └── prisma.service.ts
+  │   │
+  │   ├── auth/
+  │   │   ├── auth.module.ts
+  │   │   ├── auth.controller.ts
+  │   │   ├── auth.service.ts
+  │   │   ├── strategies/jwt.strategy.ts
+  │   │   └── dto/
+  │   │       ├── login.dto.ts
+  │   │       └── change-password.dto.ts
+  |   |
+  │   ├── users/
+  │   │   ├── users.module.ts
+  │   │   ├── users.controller.ts
+  │   │   ├── users.service.ts
+  │   │   └── dto/
+  │   │       ├── create-user.dto.ts
+  │   │       └── update-user.dto.ts
+  │   │
+  │   ├── issues/
+  │   │   ├── issues.module.ts
+  │   │   ├── issues.controller.ts
+  │   │   ├── issues.service.ts
+  │   │   └── dto/
+  │   │       ├── create-issue.dto.ts
+  │   │       ├── update-issue.dto.ts
+  │   │       ├── escalate-issue.dto.ts
+  │   │       ├── update-status.dto.ts
+  │   │       └── query-issues.dto.ts
+  │   │
+  │   ├── comments/
+  │   │   ├── comments.module.ts
+  │   │   ├── comments.controller.ts
+  │   │   ├── comments.service.ts
+  │   │   └── dto/
+  │   │       ├── create-comment.dto.ts
+  │   │       └── update-comment.dto.ts
+  │   │
+  │   ├── attachments/
+  │   │   ├── attachments.module.ts
+  │   │   ├── attachments.controller.ts
+  │   │   ├── attachments.service.ts
+  │   │   └── dto/create-attachment.dto.ts
+  │   │
+  │   ├── projects/
+  │   │   ├── projects.module.ts
+  │   │   ├── projects.controller.ts
+  │   │   ├── projects.service.ts
+  │   │   └── dto/
+  │   │       ├── create-project.dto.ts
+  │   │       └── update-project.dto.ts
+  │   │
+  │   ├── sprints/
+  │   │   ├── sprints.module.ts
 
----
+  │   │   ├── sprints.controller.ts
+  │   │   ├── sprints.service.ts
+  │   │   └── dto/
+  │   │       ├── create-sprint.dto.ts
+  │   │       ├── update-sprint.dto.ts
+  │   │       └── complete-sprint.dto.ts
+  │   │
+  │   ├── epics/
+  │   │   ├── epics.module.ts
+  │   │   ├── epics.controller.ts
+  │   │   ├── epics.service.ts
+  │   │   └── dto/
+  │   │       ├── create-epic.dto.ts
+  │   │       └── update-epic.dto.ts
+  │   │
+  │   ├── notifications/
+  │   │   ├── notifications.module.ts
+  │   │   ├── notifications.controller.ts
+  │   │   └── notifications.service.ts
+  │   │
+  │   ├── activity/
+  │   │   ├── activity.module.ts
+  │   │   ├── activity.controller.ts
+  │   │   └── activity.service.ts
+  │   │
+  │   ├── saved-filters/
+  │   │   ├── saved-filters.module.ts
+  │   │   ├── saved-filters.controller.ts
+  │   │   ├── saved-filters.service.ts
+  │   │   └── dto/create-filter.dto.ts
+  │   │
+  │   ├── settings/
+  │   │   ├── settings.module.ts
+  │   │   ├── settings.controller.ts
+  │   │   ├── settings.service.ts
+  │   │   └── dto/update-settings.dto.ts
+  │   │
+  │   ├── search/
+  │   │   ├── search.module.ts
+  │   │   ├── search.controller.ts
+  │   │   └── search.service.ts
+  │   │
+  │   └── system/
+  │       ├── system.module.ts
+  │       ├── system.controller.ts
+  │       └── system.service.ts
+  ├── test/
+  ├── .env
+  ├── .env.example
+  ├── package.json
+  ├── tsconfig.json
+  └── tsconfig.build.json
+  ```
+
+  ---
 
 ## Phase 7 — Controller → Service → Prisma Architectural Flow
 
