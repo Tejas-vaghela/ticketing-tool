@@ -29,6 +29,18 @@ const DEFAULT_SLA_RULES: Record<string, { response: number; resolution: number }
   Lowest: { response: 12, resolution: 72 },
 };
 
+export const safeUserSelect = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  department: true,
+  supportLevels: true,
+  avatar: true,
+  timezone: true,
+  status: true,
+} as const;
+
 function normalizeStatus(statusStr: string): IssueStatus {
   const s = statusStr.trim();
   if (s === 'To Do' || s === 'To_Do') return IssueStatus.To_Do;
@@ -52,7 +64,7 @@ export class IssuesService {
   ) {}
 
   /**
-   * List all issues with optional filtering
+   * List all issues with optional filtering (Optimized projection without exposing password hashes)
    */
   async findAll(query: {
     projectId?: string;
@@ -95,10 +107,33 @@ export class IssuesService {
       where,
       orderBy: { createdDate: 'desc' },
       include: {
-        assignee: true,
-        project: true,
-        sprint: true,
-        epic: true,
+        assignee: { select: safeUserSelect },
+        project: {
+          select: {
+            id: true,
+            key: true,
+            name: true,
+            category: true,
+            status: true,
+          },
+        },
+        sprint: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+          },
+        },
+        epic: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            status: true,
+          },
+        },
         _count: {
           select: {
             comments: true,
@@ -116,13 +151,13 @@ export class IssuesService {
     const issue = await this.prisma.issue.findUnique({
       where: { id },
       include: {
-        assignee: true,
-        reporter: true,
+        assignee: { select: safeUserSelect },
+        reporter: { select: safeUserSelect },
         project: true,
         sprint: true,
         epic: true,
         comments: {
-          include: { author: true },
+          include: { author: { select: safeUserSelect } },
           orderBy: { createdAt: 'desc' },
         },
         attachments: {
@@ -130,8 +165,8 @@ export class IssuesService {
         },
         escalationHistory: {
           include: {
-            escalatedByUser: true,
-            assignedToUser: true,
+            escalatedByUser: { select: safeUserSelect },
+            assignedToUser: { select: safeUserSelect },
           },
           orderBy: { timestamp: 'desc' },
         },
@@ -148,7 +183,7 @@ export class IssuesService {
   /**
    * Create new issue and trigger assignment notification if assigned.
    */
-  async create(dto: CreateIssueDto, currentUser: { id: string; name?: string }): Promise<Issue> {
+  async create(dto: CreateIssueDto, currentUser: { id: string; name?: string }): Promise<any> {
     const project = await this.prisma.project.findUnique({
       where: { id: dto.projectId },
     });
@@ -201,7 +236,7 @@ export class IssuesService {
         resolutionSLAHours: sla.resolution,
       },
       include: {
-        assignee: true,
+        assignee: { select: safeUserSelect },
         project: true,
       },
     });
@@ -235,7 +270,7 @@ export class IssuesService {
   /**
    * Update issue fields and trigger assignment notification if assignee changed.
    */
-  async update(id: string, dto: UpdateIssueDto, currentUser: { id: string; name?: string }): Promise<Issue> {
+  async update(id: string, dto: UpdateIssueDto, currentUser: { id: string; name?: string }): Promise<any> {
     const existing = await this.findById(id);
 
     const updateData: Prisma.IssueUpdateInput = {};
@@ -270,7 +305,7 @@ export class IssuesService {
       where: { id },
       data: updateData,
       include: {
-        assignee: true,
+        assignee: { select: safeUserSelect },
         project: true,
       },
     });
@@ -297,14 +332,17 @@ export class IssuesService {
     id: string,
     statusStr: string,
     currentUser: { id: string; name?: string },
-  ): Promise<Issue> {
+  ): Promise<any> {
     const existing = await this.findById(id);
     const newStatus = normalizeStatus(statusStr);
 
     const updated = await this.prisma.issue.update({
       where: { id },
       data: { status: newStatus },
-      include: { assignee: true, project: true },
+      include: {
+        assignee: { select: safeUserSelect },
+        project: true,
+      },
     });
 
     // Log Activity
@@ -345,7 +383,7 @@ export class IssuesService {
     id: string,
     dto: EscalateIssueDto,
     currentUser: { id: string; name?: string },
-  ): Promise<Issue> {
+  ): Promise<any> {
     const existing = await this.findById(id);
 
     return await this.prisma.$transaction(async (tx) => {
@@ -380,7 +418,7 @@ export class IssuesService {
           assigneeId: dto.assignedToUserId || existing.assigneeId,
         },
         include: {
-          assignee: true,
+          assignee: { select: safeUserSelect },
           project: true,
         },
       });
@@ -434,7 +472,7 @@ export class IssuesService {
         type: dto.type || CommentType.public,
       },
       include: {
-        author: true,
+        author: { select: safeUserSelect },
       },
     });
 
@@ -477,7 +515,7 @@ export class IssuesService {
   async listComments(issueId: string): Promise<any[]> {
     return this.prisma.comment.findMany({
       where: { issueId },
-      include: { author: true },
+      include: { author: { select: safeUserSelect } },
       orderBy: { createdAt: 'desc' },
     });
   }

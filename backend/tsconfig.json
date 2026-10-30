@@ -18,5 +18,6 @@
     "strictPropertyInitialization": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
-  }
+  },
+  "exclude": ["node_modules", "dist", "test"]
 }

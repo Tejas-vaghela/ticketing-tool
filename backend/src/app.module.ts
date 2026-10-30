@@ -9,6 +9,7 @@ import { SprintsModule } from './sprints/sprints.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ActivityModule } from './activity/activity.module';
 import { IssuesModule } from './issues/issues.module';
+import { SavedFiltersModule } from './saved-filters/saved-filters.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -27,6 +28,7 @@ import { AppService } from './app.service';
     NotificationsModule,
     ActivityModule,
     IssuesModule,
+    SavedFiltersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

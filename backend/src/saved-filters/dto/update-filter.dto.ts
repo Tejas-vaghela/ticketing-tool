@@ -1,1 +1,12 @@
-export * from '../../modules/saved-filters/dto/update-filter.dto';
+import { IsOptional, IsString, MaxLength, IsObject } from 'class-validator';
+
+export class UpdateFilterDto {
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  name?: string;
+
+  @IsObject()
+  @IsOptional()
+  filters?: Record<string, any>;
+}

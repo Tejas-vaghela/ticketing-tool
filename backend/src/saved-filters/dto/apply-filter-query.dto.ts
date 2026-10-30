@@ -1,1 +1,7 @@
-export * from '../../modules/saved-filters/dto/apply-filter-query.dto';
+import { IsOptional, IsString } from 'class-validator';
+
+export class ApplyFilterQueryDto {
+  @IsString()
+  @IsOptional()
+  filterId?: string;
+}

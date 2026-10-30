@@ -130,7 +130,7 @@ export class NotificationsService {
   async sendSystemAlert(
     dto: { title: string; message: string; targetUserIds?: string[] },
     actorId?: string,
-  ): Promise<{ success: boolean; count: number }> {
+  ): Promise<{ success: boolean; count: number; recipients: string[] }> {
     let recipients: string[] = dto.targetUserIds || [];
     if (!recipients.length) {
       const allUsers = await this.prisma.user.findMany({ select: { id: true } });
@@ -149,6 +149,6 @@ export class NotificationsService {
       if (res) createdCount++;
     }
 
-    return { success: true, count: createdCount };
+    return { success: true, count: createdCount, recipients };
   }
 }

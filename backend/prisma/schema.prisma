@@ -151,6 +151,7 @@ model Project {
 
   @@index([key])
   @@index([status])
+  @@index([leadId])
 }
 
 model Sprint {
@@ -228,6 +229,9 @@ model Issue {
   @@index([projectId, status])
   @@index([supportLevel, status])
   @@index([assigneeId])
+  @@index([sprintId])
+  @@index([epicId])
+  @@index([reporterId])
   @@index([priority])
   @@index([createdDate])
   @@index([isEscalated])
@@ -262,6 +266,7 @@ model Comment {
   updatedAt DateTime?   @updatedAt
 
   @@index([issueId, type])
+  @@index([authorId])
 }
 
 model Attachment {
@@ -290,6 +295,7 @@ model ActivityEvent {
 
   @@index([issueId])
   @@index([projectId])
+  @@index([userId])
   @@index([timestamp])
 }
 

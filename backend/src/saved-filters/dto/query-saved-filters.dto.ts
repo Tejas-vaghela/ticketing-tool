@@ -1,1 +1,7 @@
-export * from '../../modules/saved-filters/dto/query-saved-filters.dto';
+import { IsOptional, IsString } from 'class-validator';
+
+export class QuerySavedFiltersDto {
+  @IsString()
+  @IsOptional()
+  search?: string;
+}

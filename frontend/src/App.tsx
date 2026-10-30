@@ -1,27 +1,37 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
 import { AppLayout } from './components/layout/AppLayout';
-
-import { LoginPage } from './pages/LoginPage';
-import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
-import { ResetPasswordPage } from './pages/ResetPasswordPage';
-import { AdminPanelPage } from './pages/AdminPanelPage';
-import { Dashboard } from './pages/Dashboard';
-import { IssuesPage } from './pages/IssuesPage';
-import { IssueDetailPage } from './pages/IssueDetailPage';
-import { KanbanBoard } from './pages/KanbanBoard';
-import { BacklogPage } from './pages/BacklogPage';
-import { SupportCenterPage } from './pages/SupportCenterPage';
-import { ReportsPage } from './pages/ReportsPage';
-import { ProjectsPage } from './pages/ProjectsPage';
-import { ProjectDetailPage } from './pages/ProjectDetailPage';
-import { TeamPage } from './pages/TeamPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { DocumentationPage } from './pages/DocumentationPage';
-import { AccessDeniedPage } from './pages/AccessDeniedPage';
 import { AppPageId, hasRoleAccessToPage } from './services/rbac';
+
+// Lazy-loaded route pages for on-demand bundle splitting
+const LoginPage = React.lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
+const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage').then(m => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = React.lazy(() => import('./pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
+const AdminPanelPage = React.lazy(() => import('./pages/AdminPanelPage').then(m => ({ default: m.AdminPanelPage })));
+const Dashboard = React.lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const IssuesPage = React.lazy(() => import('./pages/IssuesPage').then(m => ({ default: m.IssuesPage })));
+const IssueDetailPage = React.lazy(() => import('./pages/IssueDetailPage').then(m => ({ default: m.IssueDetailPage })));
+const KanbanBoard = React.lazy(() => import('./pages/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
+const BacklogPage = React.lazy(() => import('./pages/BacklogPage').then(m => ({ default: m.BacklogPage })));
+const SupportCenterPage = React.lazy(() => import('./pages/SupportCenterPage').then(m => ({ default: m.SupportCenterPage })));
+const ReportsPage = React.lazy(() => import('./pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
+const ProjectsPage = React.lazy(() => import('./pages/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
+const ProjectDetailPage = React.lazy(() => import('./pages/ProjectDetailPage').then(m => ({ default: m.ProjectDetailPage })));
+const TeamPage = React.lazy(() => import('./pages/TeamPage').then(m => ({ default: m.TeamPage })));
+const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const ProfilePage = React.lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
+const DocumentationPage = React.lazy(() => import('./pages/DocumentationPage').then(m => ({ default: m.DocumentationPage })));
+const AccessDeniedPage = React.lazy(() => import('./pages/AccessDeniedPage').then(m => ({ default: m.AccessDeniedPage })));
+
+const PageLoadingFallback: React.FC = () => (
+  <div className="flex-1 flex items-center justify-center min-h-[400px]">
+    <div className="flex items-center space-x-2 text-zinc-400 text-xs font-medium">
+      <div className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
+      <span>Loading page...</span>
+    </div>
+  </div>
+);
 
 // Route guard requiring authenticated session
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -100,7 +110,7 @@ class RootErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundar
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[RootErrorBoundary] Uncaught application error:', error, errorInfo);
+    console.error('Uncaught error in UI rendering lifecycle:', error, errorInfo);
   }
 
   handleReload = () => {
@@ -157,66 +167,70 @@ export default function App() {
     <RootErrorBoundary>
       <AppProvider>
       <BrowserRouter>
-        <Routes>
-          {/* Public Authentication Route */}
-          <Route
-            path="/login"
-            element={
-              <PublicOnlyRoute>
-                <LoginPage />
-              </PublicOnlyRoute>
-            }
-          />
+        <Suspense fallback={<PageLoadingFallback />}>
+          <Routes>
+            {/* Public Authentication Route */}
+            <Route
+              path="/login"
+              element={
+                <PublicOnlyRoute>
+                  <LoginPage />
+                </PublicOnlyRoute>
+              }
+            />
 
-          {/* Forgot Password — public, redirects authenticated users home */}
-          <Route
-            path="/forgot-password"
-            element={
-              <PublicOnlyRoute>
-                <ForgotPasswordPage />
-              </PublicOnlyRoute>
-            }
-          />
+            {/* Forgot Password — public, redirects authenticated users home */}
+            <Route
+              path="/forgot-password"
+              element={
+                <PublicOnlyRoute>
+                  <ForgotPasswordPage />
+                </PublicOnlyRoute>
+              }
+            />
 
-          {/* Reset Password — public, token validated server-side */}
-          <Route
-            path="/reset-password"
-            element={
-              <PublicOnlyRoute>
-                <ResetPasswordPage />
-              </PublicOnlyRoute>
-            }
-          />
+            {/* Reset Password — public, token validated server-side */}
+            <Route
+              path="/reset-password"
+              element={
+                <PublicOnlyRoute>
+                  <ResetPasswordPage />
+                </PublicOnlyRoute>
+              }
+            />
 
-          {/* Protected Application Workspace */}
-          <Route
-            path="/*"
-            element={
-              <ProtectedRoute>
-                <AppLayout>
-                  <Routes>
-                    <Route path="/" element={<RoleRoute pageId="dashboard"><Dashboard /></RoleRoute>} />
-                    <Route path="/issues" element={<RoleRoute pageId="issues"><IssuesPage /></RoleRoute>} />
-                    <Route path="/issues/:id" element={<RoleRoute pageId="issues"><IssueDetailPage /></RoleRoute>} />
-                    <Route path="/board" element={<RoleRoute pageId="board"><KanbanBoard /></RoleRoute>} />
-                    <Route path="/backlog" element={<RoleRoute pageId="backlog"><BacklogPage /></RoleRoute>} />
-                    <Route path="/epics" element={<RoleRoute pageId="backlog"><BacklogPage /></RoleRoute>} />
-                    <Route path="/support" element={<RoleRoute pageId="support"><SupportCenterPage /></RoleRoute>} />
-                    <Route path="/reports" element={<RoleRoute pageId="reports"><ReportsPage /></RoleRoute>} />
-                    <Route path="/projects" element={<RoleRoute pageId="projects"><ProjectsPage /></RoleRoute>} />
-                    <Route path="/projects/:id" element={<RoleRoute pageId="projects"><ProjectDetailPage /></RoleRoute>} />
-                    <Route path="/team" element={<RoleRoute pageId="team"><TeamPage /></RoleRoute>} />
-                    <Route path="/admin" element={<RoleRoute pageId="admin"><AdminPanelPage /></RoleRoute>} />
-                    <Route path="/settings" element={<RoleRoute pageId="settings"><SettingsPage /></RoleRoute>} />
-                    <Route path="/profile" element={<RoleRoute pageId="profile"><ProfilePage /></RoleRoute>} />
-                    <Route path="/docs" element={<RoleRoute pageId="docs"><DocumentationPage /></RoleRoute>} />
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Routes>
-                </AppLayout>
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
+            {/* Protected Application Workspace */}
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute>
+                  <AppLayout>
+                    <Suspense fallback={<PageLoadingFallback />}>
+                      <Routes>
+                        <Route path="/" element={<RoleRoute pageId="dashboard"><Dashboard /></RoleRoute>} />
+                        <Route path="/issues" element={<RoleRoute pageId="issues"><IssuesPage /></RoleRoute>} />
+                        <Route path="/issues/:id" element={<RoleRoute pageId="issues"><IssueDetailPage /></RoleRoute>} />
+                        <Route path="/board" element={<RoleRoute pageId="board"><KanbanBoard /></RoleRoute>} />
+                        <Route path="/backlog" element={<RoleRoute pageId="backlog"><BacklogPage /></RoleRoute>} />
+                        <Route path="/epics" element={<RoleRoute pageId="backlog"><BacklogPage /></RoleRoute>} />
+                        <Route path="/support" element={<RoleRoute pageId="support"><SupportCenterPage /></RoleRoute>} />
+                        <Route path="/reports" element={<RoleRoute pageId="reports"><ReportsPage /></RoleRoute>} />
+                        <Route path="/projects" element={<RoleRoute pageId="projects"><ProjectsPage /></RoleRoute>} />
+                        <Route path="/projects/:id" element={<RoleRoute pageId="projects"><ProjectDetailPage /></RoleRoute>} />
+                        <Route path="/team" element={<RoleRoute pageId="team"><TeamPage /></RoleRoute>} />
+                        <Route path="/admin" element={<RoleRoute pageId="admin"><AdminPanelPage /></RoleRoute>} />
+                        <Route path="/settings" element={<RoleRoute pageId="settings"><SettingsPage /></RoleRoute>} />
+                        <Route path="/profile" element={<RoleRoute pageId="profile"><ProfilePage /></RoleRoute>} />
+                        <Route path="/docs" element={<RoleRoute pageId="docs"><DocumentationPage /></RoleRoute>} />
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                      </Routes>
+                    </Suspense>
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </AppProvider>
     </RootErrorBoundary>
