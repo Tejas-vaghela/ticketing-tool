@@ -1,17 +1,12 @@
-import {
-  IsString,
-  IsOptional,
-  IsEnum,
-  IsArray,
-  IsNumber,
-  IsBoolean,
-  IsISO8601,
-} from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsArray, IsInt, Min, IsDateString, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { IssueType, IssueStatus, Priority, SupportLevel } from '@prisma/client';
+import { normalizeIssueStatus } from '../status-mapper.js';
 
 export class UpdateIssueDto {
   @IsString()
   @IsOptional()
+  @MaxLength(255)
   title?: string;
 
   @IsString()
@@ -22,6 +17,7 @@ export class UpdateIssueDto {
   @IsOptional()
   type?: IssueType;
 
+  @Transform(({ value }) => (value ? normalizeIssueStatus(value) ?? value : value))
   @IsEnum(IssueStatus)
   @IsOptional()
   status?: IssueStatus;
@@ -36,38 +32,35 @@ export class UpdateIssueDto {
 
   @IsString()
   @IsOptional()
-  assigneeId?: string | null;
+  assigneeId?: string;
 
   @IsString()
   @IsOptional()
-  sprintId?: string | null;
+  sprintId?: string;
 
   @IsString()
   @IsOptional()
-  epicId?: string | null;
+  epicId?: string;
 
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
   labels?: string[];
 
-  @IsISO8601()
+  @IsDateString()
   @IsOptional()
-  dueDate?: string | null;
+  dueDate?: string;
 
-  @IsNumber()
+  @IsInt()
+  @Min(0)
   @IsOptional()
-  storyPoints?: number | null;
-
-  @IsString()
-  @IsOptional()
-  estimatedTime?: string | null;
+  storyPoints?: number;
 
   @IsString()
   @IsOptional()
-  remainingTime?: string | null;
+  estimatedTime?: string;
 
-  @IsBoolean()
+  @IsString()
   @IsOptional()
-  isEscalated?: boolean;
+  remainingTime?: string;
 }

@@ -1,453 +1,475 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
-import {
-  Issue,
-  IssueStatus,
-  Priority,
-  SupportLevel,
-  IssueType,
-  CommentType,
-  NotificationType,
-  Prisma,
-} from '@prisma/client';
-import { CreateIssueDto } from './dto/create-issue.dto';
-import { UpdateIssueDto } from './dto/update-issue.dto';
-import { EscalateIssueDto } from './dto/escalate-issue.dto';
-import { CreateCommentDto } from './dto/create-comment.dto';
-
-const DEFAULT_SLA_RULES: Record<string, { response: number; resolution: number }> = {
-  Highest: { response: 1, resolution: 4 },
-  High: { response: 2, resolution: 8 },
-  Medium: { response: 4, resolution: 24 },
-  Low: { response: 8, resolution: 48 },
-  Lowest: { response: 12, resolution: 72 },
-};
-
-export const safeUserSelect = {
-  id: true,
-  name: true,
-  email: true,
-  role: true,
-  department: true,
-  supportLevels: true,
-  avatar: true,
-  timezone: true,
-  status: true,
-} as const;
-
-function normalizeStatus(statusStr: string): IssueStatus {
-  const s = statusStr.trim();
-  if (s === 'To Do' || s === 'To_Do') return IssueStatus.To_Do;
-  if (s === 'In Progress' || s === 'In_Progress') return IssueStatus.In_Progress;
-  if (s === 'In Review' || s === 'In_Review') return IssueStatus.In_Review;
-  if (s === 'Open') return IssueStatus.Open;
-  if (s === 'Testing') return IssueStatus.Testing;
-  if (s === 'Blocked') return IssueStatus.Blocked;
-  if (s === 'Resolved') return IssueStatus.Resolved;
-  if (s === 'Closed') return IssueStatus.Closed;
-  return IssueStatus.Open;
-}
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { CreateIssueDto } from './dto/create-issue.dto.js';
+import { UpdateIssueDto } from './dto/update-issue.dto.js';
+import { EscalateIssueDto } from './dto/escalate-issue.dto.js';
+import { UpdateStatusDto } from './dto/update-status.dto.js';
+import { QueryIssuesDto } from './dto/query-issues.dto.js';
+import { SupportLevel, Priority, Prisma, IssueStatus } from '@prisma/client';
+import { normalizeIssueStatus } from './status-mapper.js';
 
 @Injectable()
 export class IssuesService {
-  private readonly logger = new Logger(IssuesService.name);
-
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly notificationsService: NotificationsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
-   * List all issues with optional filtering (Optimized projection without exposing password hashes)
+   * Helper: Calculate SLA thresholds based on issue priority.
    */
-  async findAll(query: {
-    projectId?: string;
-    status?: string;
-    priority?: string;
-    supportLevel?: string;
-    assigneeId?: string;
-    sprintId?: string;
-    q?: string;
-  }): Promise<any[]> {
-    const where: Prisma.IssueWhereInput = {};
+  private getSLAHours(priority: Priority): { response: number; resolution: number } {
+    switch (priority) {
+      case Priority.Highest: return { response: 1.0, resolution: 4.0 };
+      case Priority.High: return { response: 2.0, resolution: 8.0 };
+      case Priority.Medium: return { response: 4.0, resolution: 24.0 };
+      case Priority.Low: return { response: 8.0, resolution: 48.0 };
+      case Priority.Lowest: return { response: 24.0, resolution: 72.0 };
+      default: return { response: 4.0, resolution: 24.0 };
+    }
+  }
 
-    if (query.projectId) where.projectId = query.projectId;
-    if (query.status) where.status = normalizeStatus(query.status);
-    if (query.priority) where.priority = query.priority as Priority;
-    if (query.supportLevel) where.supportLevel = query.supportLevel as SupportLevel;
-    if (query.assigneeId) {
-      if (query.assigneeId === 'unassigned') {
-        where.assigneeId = null;
-      } else {
-        where.assigneeId = query.assigneeId;
-      }
-    }
-    if (query.sprintId) {
-      if (query.sprintId === 'backlog') {
-        where.sprintId = null;
-      } else {
-        where.sprintId = query.sprintId;
-      }
-    }
-    if (query.q) {
-      where.OR = [
-        { id: { contains: query.q, mode: 'insensitive' } },
-        { title: { contains: query.q, mode: 'insensitive' } },
-        { description: { contains: query.q, mode: 'insensitive' } },
-      ];
+  /**
+   * Create ticket with project-keyed ID (e.g. INB-1001), SLA calculations, and audit logging.
+   */
+  async create(dto: CreateIssueDto, reporterId: string) {
+    let project = await this.prisma.project.findUnique({
+      where: { id: dto.projectId },
+    });
+
+    if (!project) {
+      project = await this.prisma.project.findUnique({
+        where: { key: dto.projectId },
+      });
     }
 
-    return this.prisma.issue.findMany({
-      where,
-      orderBy: { createdDate: 'desc' },
-      include: {
-        assignee: { select: safeUserSelect },
-        project: {
-          select: {
-            id: true,
-            key: true,
-            name: true,
-            category: true,
-            status: true,
-          },
+    if (!project) {
+      throw new NotFoundException(`Project with ID or Key '${dto.projectId}' not found.`);
+    }
+
+    // Collision-proof sequential ID generation: find maximum numeric suffix for project
+    const existingIssues = await this.prisma.issue.findMany({
+      where: { projectId: project.id },
+      select: { id: true },
+    });
+    const prefix = `${project.key}-`;
+    let maxNum = 1000;
+    for (const item of existingIssues) {
+      if (item.id.startsWith(prefix)) {
+        const numPart = parseInt(item.id.slice(prefix.length), 10);
+        if (!isNaN(numPart) && numPart > maxNum) {
+          maxNum = numPart;
+        }
+      }
+    }
+    const nextId = `${project.key}-${maxNum + 1}`;
+    const sla = this.getSLAHours(dto.priority);
+    const initialStatus = dto.status
+      ? (normalizeIssueStatus(dto.status) ?? IssueStatus.Open)
+      : IssueStatus.Open;
+
+    // Foreign-key integrity safeguards
+    let assigneeId: string | null = null;
+    if (dto.assigneeId && dto.assigneeId !== 'unassigned') {
+      const userExists = await this.prisma.user.findUnique({ where: { id: dto.assigneeId } });
+      if (userExists) assigneeId = dto.assigneeId;
+    }
+
+    let sprintId: string | null = null;
+    if (dto.sprintId && dto.sprintId !== 'backlog') {
+      const sprintExists = await this.prisma.sprint.findUnique({ where: { id: dto.sprintId } });
+      if (sprintExists) sprintId = dto.sprintId;
+    }
+
+    let epicId: string | null = null;
+    if (dto.epicId) {
+      const epicExists = await this.prisma.epic.findUnique({ where: { id: dto.epicId } });
+      if (epicExists) epicId = dto.epicId;
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const issue = await tx.issue.create({
+        data: {
+          id: nextId,
+          projectId: project.id,
+          reporterId,
+          title: dto.title,
+          description: dto.description ?? '',
+          type: dto.type,
+          status: initialStatus,
+          priority: dto.priority,
+          supportLevel: dto.supportLevel,
+          assigneeId,
+          sprintId,
+          epicId,
+          labels: dto.labels ?? [],
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+          storyPoints: dto.storyPoints,
+          estimatedTime: dto.estimatedTime,
+          remainingTime: dto.estimatedTime,
+          responseSLAHours: sla.response,
+          resolutionSLAHours: sla.resolution,
         },
-        sprint: {
-          select: {
-            id: true,
-            name: true,
-            status: true,
-            startDate: true,
-            endDate: true,
-          },
+        include: {
+          assignee: true,
+          project: true,
+          sprint: true,
+          epic: true,
         },
-        epic: {
-          select: {
-            id: true,
-            name: true,
-            color: true,
-            status: true,
-          },
+      });
+
+      await tx.activityEvent.create({
+        data: {
+          issueId: issue.id,
+          userId: reporterId,
+          action: 'created',
+          details: `Created issue ${issue.id} with priority ${issue.priority}`,
         },
-        _count: {
-          select: {
-            comments: true,
-            attachments: true,
-          },
-        },
-      },
+      });
+
+      return issue;
     });
   }
 
   /**
-   * Find single issue by formatted ID (e.g. "INB-1002")
+   * Multi-criteria query with pagination, search, and relations.
+   * Supports Kanban board filters: search query, project, sprint (including BACKLOG),
+   * support tier (L1, L2, L3), assigned member (including ME and unassigned), and status.
    */
-  async findById(id: string): Promise<any> {
+  async findAll(query: QueryIssuesDto, currentUserId?: string) {
+    const {
+      page = 1,
+      limit = 50,
+      sortBy = 'createdDate',
+      sortOrder = 'desc',
+    } = query;
+
+    const where: Prisma.IssueWhereInput = {};
+
+    // 1. Search filter: q or search across id, title, description, labels
+    const rawSearch = (query.q || query.search || '').trim();
+    if (rawSearch) {
+      where.OR = [
+        { id: { contains: rawSearch, mode: 'insensitive' } },
+        { title: { contains: rawSearch, mode: 'insensitive' } },
+        { description: { contains: rawSearch, mode: 'insensitive' } },
+        { labels: { has: rawSearch } },
+      ];
+    }
+
+    // 2. Project filter: projectId or project (key or ID, handles 'ALL')
+    const rawProject = (query.projectId || query.project || '').trim();
+    if (rawProject && rawProject.toUpperCase() !== 'ALL') {
+      const proj = await this.prisma.project.findFirst({
+        where: { OR: [{ id: rawProject }, { key: rawProject }] },
+      });
+      where.projectId = proj ? proj.id : rawProject;
+    }
+
+    // 3. Sprint filter: sprintId or sprint (handles 'ALL' and 'BACKLOG' / 'backlog')
+    const rawSprint = (query.sprintId || query.sprint || '').trim();
+    if (rawSprint && rawSprint.toUpperCase() !== 'ALL') {
+      if (
+        rawSprint.toUpperCase() === 'BACKLOG' ||
+        rawSprint.toLowerCase() === 'none' ||
+        rawSprint === 'null'
+      ) {
+        where.sprintId = null;
+      } else {
+        where.sprintId = rawSprint;
+      }
+    }
+
+    // 4. Support tier / level filter: supportLevel or supportTier or tier (handles 'ALL')
+    const rawTier = (query.supportLevel || query.supportTier || query.tier || '').trim();
+    if (rawTier && rawTier.toUpperCase() !== 'ALL') {
+      const upperTier = rawTier.toUpperCase();
+      if (upperTier === 'L1' || upperTier === 'L2' || upperTier === 'L3') {
+        where.supportLevel = upperTier as SupportLevel;
+      }
+    }
+
+    // 5. Assigned member filter: assigneeId, assignee, assignedMember, member (handles 'ALL', 'unassigned', 'ME')
+    const rawAssignee = (
+      query.assigneeId ||
+      query.assignee ||
+      query.assignedMember ||
+      query.member ||
+      ''
+    ).trim();
+    if (rawAssignee && rawAssignee.toUpperCase() !== 'ALL') {
+      if (
+        rawAssignee.toLowerCase() === 'unassigned' ||
+        rawAssignee.toLowerCase() === 'none' ||
+        rawAssignee === 'null'
+      ) {
+        where.assigneeId = null;
+      } else if (rawAssignee.toUpperCase() === 'ME') {
+        if (currentUserId) {
+          where.assigneeId = currentUserId;
+        }
+      } else {
+        where.assigneeId = rawAssignee;
+      }
+    }
+
+    // 6. Status filter (maps board labels or enum names, handles 'ALL')
+    if (query.status) {
+      const mappedStatus = normalizeIssueStatus(query.status) || query.status;
+      where.status = mappedStatus;
+    }
+
+    // 7. Priority filter
+    if (query.priority) {
+      where.priority = query.priority;
+    }
+
+    // 8. Escalation filter
+    if (typeof query.isEscalated === 'boolean') {
+      where.isEscalated = query.isEscalated;
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.issue.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder },
+        include: {
+          assignee: { select: { id: true, name: true, email: true, avatar: true } },
+          project: { select: { id: true, key: true, name: true } },
+          sprint: { select: { id: true, name: true, status: true } },
+          epic: { select: { id: true, name: true, color: true } },
+          escalationHistory: {
+            orderBy: { timestamp: 'desc' },
+          },
+        },
+      }),
+      this.prisma.issue.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Retrieve single issue with comments, attachments, and escalation history.
+   */
+  async findOne(id: string) {
     const issue = await this.prisma.issue.findUnique({
       where: { id },
       include: {
-        assignee: { select: safeUserSelect },
-        reporter: { select: safeUserSelect },
+        assignee: true,
+        reporter: true,
         project: true,
         sprint: true,
         epic: true,
-        comments: {
-          include: { author: { select: safeUserSelect } },
-          orderBy: { createdAt: 'desc' },
-        },
-        attachments: {
-          orderBy: { uploadDate: 'asc' },
-        },
         escalationHistory: {
           include: {
-            escalatedByUser: { select: safeUserSelect },
-            assignedToUser: { select: safeUserSelect },
+            escalatedByUser: { select: { id: true, name: true } },
+            assignedToUser: { select: { id: true, name: true } },
           },
           orderBy: { timestamp: 'desc' },
         },
+        comments: {
+          include: { author: { select: { id: true, name: true, avatar: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+        attachments: true,
       },
     });
 
     if (!issue) {
-      throw new NotFoundException(`Issue with identifier ${id} not found.`);
+      throw new NotFoundException(`Issue with ID '${id}' was not found.`);
     }
 
     return issue;
   }
 
   /**
-   * Create new issue and trigger assignment notification if assigned.
+   * Update mutable fields.
    */
-  async create(dto: CreateIssueDto, currentUser: { id: string; name?: string }): Promise<any> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: dto.projectId },
-    });
-    if (!project) {
-      throw new NotFoundException(`Project ${dto.projectId} not found.`);
-    }
+  async update(id: string, dto: UpdateIssueDto, userId: string) {
+    const issue = await this.findOne(id);
 
-    const prefix = project.key || 'INB';
+    const data: Prisma.IssueUpdateInput = {};
 
-    // Auto-generate next human-readable ID
-    const existingIssues = await this.prisma.issue.findMany({
-      where: { id: { startsWith: `${prefix}-` } },
-      select: { id: true },
-    });
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.type !== undefined) data.type = dto.type;
+    if (dto.supportLevel !== undefined) data.supportLevel = dto.supportLevel;
+    if (dto.labels !== undefined) data.labels = dto.labels;
+    if (dto.storyPoints !== undefined) data.storyPoints = dto.storyPoints;
+    if (dto.estimatedTime !== undefined) data.estimatedTime = dto.estimatedTime;
+    if (dto.remainingTime !== undefined) data.remainingTime = dto.remainingTime;
 
-    const numbers = existingIssues
-      .map((i) => {
-        const parts = i.id.split('-');
-        const n = parseInt(parts[1], 10);
-        return isNaN(n) ? 0 : n;
-      })
-      .filter((n) => n > 0);
-
-    const nextNum = numbers.length > 0 ? Math.max(...numbers) + 1 : 1001;
-    const newId = `${prefix}-${nextNum}`;
-
-    const priorityKey = dto.priority || Priority.Medium;
-    const sla = DEFAULT_SLA_RULES[priorityKey] || { response: 4, resolution: 24 };
-
-    const issue = await this.prisma.issue.create({
-      data: {
-        id: newId,
-        projectId: dto.projectId,
-        title: dto.title.trim(),
-        description: dto.description?.trim() || '',
-        type: dto.type || IssueType.Task,
-        status: dto.status || IssueStatus.Open,
-        priority: priorityKey,
-        supportLevel: dto.supportLevel || SupportLevel.L1,
-        assigneeId: dto.assigneeId || null,
-        reporterId: currentUser.id,
-        sprintId: dto.sprintId || null,
-        epicId: dto.epicId || null,
-        labels: dto.labels || [],
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
-        storyPoints: dto.storyPoints || null,
-        estimatedTime: dto.estimatedTime || null,
-        remainingTime: dto.estimatedTime || null,
-        responseSLAHours: sla.response,
-        resolutionSLAHours: sla.resolution,
-      },
-      include: {
-        assignee: { select: safeUserSelect },
-        project: true,
-      },
-    });
-
-    // Audit log
-    await this.prisma.activityEvent.create({
-      data: {
-        issueId: newId,
-        projectId: dto.projectId,
-        userId: currentUser.id,
-        action: 'created',
-        details: `created ticket ${newId} "${issue.title}" (Priority: ${issue.priority}, Level: ${issue.supportLevel})`,
-      },
-    });
-
-    // Trigger Assignment Notification
-    if (dto.assigneeId && dto.assigneeId !== currentUser.id) {
-      await this.notificationsService.createNotification({
-        userId: dto.assigneeId,
-        title: 'New Ticket Assigned',
-        message: `${currentUser.name || 'A team member'} assigned ${newId} "${issue.title}" to you.`,
-        type: NotificationType.assignment,
-        issueId: newId,
-        actorId: currentUser.id,
-      });
-    }
-
-    return issue;
-  }
-
-  /**
-   * Update issue fields and trigger assignment notification if assignee changed.
-   */
-  async update(id: string, dto: UpdateIssueDto, currentUser: { id: string; name?: string }): Promise<any> {
-    const existing = await this.findById(id);
-
-    const updateData: Prisma.IssueUpdateInput = {};
-    if (dto.title !== undefined) updateData.title = dto.title.trim();
-    if (dto.description !== undefined) updateData.description = dto.description.trim();
-    if (dto.type !== undefined) updateData.type = dto.type;
-    if (dto.status !== undefined) updateData.status = dto.status;
     if (dto.priority !== undefined) {
-      updateData.priority = dto.priority;
-      const sla = DEFAULT_SLA_RULES[dto.priority] || { response: 4, resolution: 24 };
-      updateData.responseSLAHours = sla.response;
-      updateData.resolutionSLAHours = sla.resolution;
+      data.priority = dto.priority;
+      const sla = this.getSLAHours(dto.priority);
+      data.responseSLAHours = sla.response;
+      data.resolutionSLAHours = sla.resolution;
     }
-    if (dto.supportLevel !== undefined) updateData.supportLevel = dto.supportLevel;
+
+    if (dto.status !== undefined) {
+      const targetStatus = normalizeIssueStatus(dto.status);
+      if (!targetStatus) {
+        throw new BadRequestException(`Invalid issue status '${dto.status}'.`);
+      }
+      data.status = targetStatus;
+      // Record response SLA milestone
+      if (issue.status === 'Open' && targetStatus !== 'Open' && !issue.firstRespondedAt) {
+        data.firstRespondedAt = new Date();
+      }
+      // Record resolution milestone
+      if (['Resolved', 'Closed'].includes(targetStatus)) {
+        data.resolvedAt = new Date();
+      } else if (issue.resolvedAt) {
+        data.resolvedAt = null; // Reopened
+      }
+    }
+
+    if (dto.dueDate !== undefined) {
+      data.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
+    }
+
     if (dto.assigneeId !== undefined) {
-      updateData.assignee = dto.assigneeId ? { connect: { id: dto.assigneeId } } : { disconnect: true };
+      if (dto.assigneeId && dto.assigneeId !== 'unassigned') {
+        const userExists = await this.prisma.user.findUnique({ where: { id: dto.assigneeId } });
+        data.assignee = userExists ? { connect: { id: dto.assigneeId } } : { disconnect: true };
+      } else {
+        data.assignee = { disconnect: true };
+      }
     }
+
     if (dto.sprintId !== undefined) {
-      updateData.sprint = dto.sprintId ? { connect: { id: dto.sprintId } } : { disconnect: true };
+      if (dto.sprintId && dto.sprintId !== 'backlog') {
+        const sprintExists = await this.prisma.sprint.findUnique({ where: { id: dto.sprintId } });
+        data.sprint = sprintExists ? { connect: { id: dto.sprintId } } : { disconnect: true };
+      } else {
+        data.sprint = { disconnect: true };
+      }
     }
+
     if (dto.epicId !== undefined) {
-      updateData.epic = dto.epicId ? { connect: { id: dto.epicId } } : { disconnect: true };
-    }
-    if (dto.labels !== undefined) updateData.labels = dto.labels;
-    if (dto.dueDate !== undefined) updateData.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
-    if (dto.storyPoints !== undefined) updateData.storyPoints = dto.storyPoints;
-    if (dto.estimatedTime !== undefined) updateData.estimatedTime = dto.estimatedTime;
-    if (dto.remainingTime !== undefined) updateData.remainingTime = dto.remainingTime;
-    if (dto.isEscalated !== undefined) updateData.isEscalated = dto.isEscalated;
-
-    const updated = await this.prisma.issue.update({
-      where: { id },
-      data: updateData,
-      include: {
-        assignee: { select: safeUserSelect },
-        project: true,
-      },
-    });
-
-    // Trigger Assignment Notification if reassigned
-    if (dto.assigneeId && dto.assigneeId !== existing.assigneeId) {
-      await this.notificationsService.createNotification({
-        userId: dto.assigneeId,
-        title: 'Ticket Assigned',
-        message: `You have been assigned ${id} "${updated.title}".`,
-        type: NotificationType.assignment,
-        issueId: id,
-        actorId: currentUser.id,
-      });
+      if (dto.epicId) {
+        const epicExists = await this.prisma.epic.findUnique({ where: { id: dto.epicId } });
+        data.epic = epicExists ? { connect: { id: dto.epicId } } : { disconnect: true };
+      } else {
+        data.epic = { disconnect: true };
+      }
     }
 
-    return updated;
-  }
-
-  /**
-   * Update issue status and trigger Status Change notification.
-   */
-  async updateStatus(
-    id: string,
-    statusStr: string,
-    currentUser: { id: string; name?: string },
-  ): Promise<any> {
-    const existing = await this.findById(id);
-    const newStatus = normalizeStatus(statusStr);
-
-    const updated = await this.prisma.issue.update({
-      where: { id },
-      data: { status: newStatus },
-      include: {
-        assignee: { select: safeUserSelect },
-        project: true,
-      },
-    });
-
-    // Log Activity
-    await this.prisma.activityEvent.create({
-      data: {
-        issueId: id,
-        projectId: existing.projectId,
-        userId: currentUser.id,
-        action: 'status_changed',
-        details: `moved ${id} from ${existing.status} to ${statusStr}`,
-      },
-    });
-
-    // Trigger Status Change Notification to assignee and reporter
-    const recipients = new Set<string>();
-    if (existing.assigneeId) recipients.add(existing.assigneeId);
-    if (existing.reporterId) recipients.add(existing.reporterId);
-
-    for (const recipientId of recipients) {
-      await this.notificationsService.createNotification({
-        userId: recipientId,
-        title: `Status Changed: ${id}`,
-        message: `Ticket ${id} moved to ${statusStr}.`,
-        type: NotificationType.status,
-        issueId: id,
-        actorId: currentUser.id,
-      });
-    }
-
-    return updated;
-  }
-
-  /**
-   * Support Escalation: atomically escalate tier, log escalation record, post internal comment,
-   * update issue, and trigger Escalation notification.
-   */
-  async escalate(
-    id: string,
-    dto: EscalateIssueDto,
-    currentUser: { id: string; name?: string },
-  ): Promise<any> {
-    const existing = await this.findById(id);
-
-    return await this.prisma.$transaction(async (tx) => {
-      // 1. Create EscalationRecord
-      await tx.escalationRecord.create({
-        data: {
-          issueId: id,
-          fromLevel: existing.supportLevel,
-          toLevel: dto.toLevel,
-          reason: dto.reason.trim(),
-          escalatedByUserId: currentUser.id,
-          assignedToUserId: dto.assignedToUserId || existing.assigneeId,
-        },
-      });
-
-      // 2. Insert automated internal note
-      await tx.comment.create({
-        data: {
-          issueId: id,
-          authorId: currentUser.id,
-          type: CommentType.internal,
-          content: `[Internal Escalation Note] Escalated from ${existing.supportLevel} to ${dto.toLevel}.\nReason: ${dto.reason.trim()}`,
-        },
-      });
-
-      // 3. Update Issue
+    return this.prisma.$transaction(async (tx) => {
       const updated = await tx.issue.update({
         where: { id },
-        data: {
-          supportLevel: dto.toLevel,
-          isEscalated: true,
-          assigneeId: dto.assignedToUserId || existing.assigneeId,
-        },
+        data,
         include: {
-          assignee: { select: safeUserSelect },
+          assignee: true,
           project: true,
+          sprint: true,
+          epic: true,
+          escalationHistory: {
+            orderBy: { timestamp: 'desc' },
+          },
         },
       });
 
-      // 4. ActivityEvent
       await tx.activityEvent.create({
         data: {
           issueId: id,
-          projectId: existing.projectId,
-          userId: currentUser.id,
-          action: 'escalated',
-          details: `escalated ${id} ${existing.supportLevel} -> ${dto.toLevel} (Reason: ${dto.reason.trim()})`,
+          userId,
+          action: 'updated',
+          details: `Updated attributes on issue ${id}`,
         },
       });
 
-      // 5. Trigger Escalation Notification
-      const targetUserId = dto.assignedToUserId || existing.assigneeId;
-      if (targetUserId) {
-        await this.notificationsService.createNotification(
-          {
-            userId: targetUserId,
-            title: `Ticket Escalated: ${id}`,
-            message: `${id} has been escalated to ${dto.toLevel}. Reason: ${dto.reason.trim()}`,
-            type: NotificationType.escalation,
-            issueId: id,
-            actorId: currentUser.id,
+      return updated;
+    });
+  }
+
+  /**
+   * Dedicated status transition (Kanban drag-and-drop).
+   * Validates and maps board labels to database statuses,
+   * updates status in PostgreSQL, records activity event if available,
+   * and preserves SLA threshold values.
+   */
+  async updateStatus(id: string, dto: UpdateStatusDto, userId?: string) {
+    const issue = await this.findOne(id);
+    const targetStatus = normalizeIssueStatus(dto.status);
+    if (!targetStatus) {
+      throw new BadRequestException(
+        `Invalid issue status '${dto.status}'. Allowed values: ${Object.values(IssueStatus).join(', ')} or board labels ('To Do', 'In Progress', 'In Review', 'Testing', 'Resolved', 'Closed', 'Open', 'Blocked')`,
+      );
+    }
+
+    const updates: Prisma.IssueUpdateInput = { status: targetStatus };
+
+    // Record response SLA milestone (milestone timestamps only; SLA target hours are never altered)
+    if (issue.status === 'Open' && targetStatus !== 'Open' && !issue.firstRespondedAt) {
+      updates.firstRespondedAt = new Date();
+    }
+
+    // Record resolution milestone
+    if (['Resolved', 'Closed'].includes(targetStatus)) {
+      updates.resolvedAt = new Date();
+    } else if (issue.resolvedAt) {
+      updates.resolvedAt = null; // Reopened
+    }
+
+    // Determine valid user for activity event if available
+    let validUserId: string | null = null;
+    if (userId) {
+      const userExists = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+      if (userExists) validUserId = userExists.id;
+    }
+    if (!validUserId && issue.reporterId) {
+      const reporterExists = await this.prisma.user.findUnique({
+        where: { id: issue.reporterId },
+        select: { id: true },
+      });
+      if (reporterExists) validUserId = reporterExists.id;
+    }
+    if (!validUserId) {
+      const anyUser = await this.prisma.user.findFirst({ select: { id: true } });
+      if (anyUser) validUserId = anyUser.id;
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.issue.update({
+        where: { id },
+        data: updates,
+        include: {
+          assignee: true,
+          project: true,
+          sprint: true,
+          epic: true,
+          escalationHistory: {
+            orderBy: { timestamp: 'desc' },
           },
-          tx,
-        );
+        },
+      });
+
+      // Record status change in the existing activity log if available
+      if (validUserId) {
+        try {
+          await tx.activityEvent.create({
+            data: {
+              issueId: id,
+              userId: validUserId,
+              action: 'status_changed',
+              details: `Changed status of ${id} from ${issue.status} to ${targetStatus}`,
+            },
+          });
+        } catch {
+          // Gracefully continue without rolling back if activity event table or schema differs
+        }
       }
 
       return updated;
@@ -455,68 +477,91 @@ export class IssuesService {
   }
 
   /**
-   * Post a comment on an issue and trigger Comment notification.
+   * Atomically escalate support tier (L1 -> L2 -> L3) with audit log and internal note.
    */
-  async addComment(
-    issueId: string,
-    dto: CreateCommentDto,
-    currentUser: { id: string; name?: string },
-  ): Promise<any> {
-    const existing = await this.findById(issueId);
+  async escalate(id: string, dto: EscalateIssueDto, userId: string) {
+    const issue = await this.findOne(id);
 
-    const comment = await this.prisma.comment.create({
-      data: {
-        issueId,
-        authorId: currentUser.id,
-        content: dto.content.trim(),
-        type: dto.type || CommentType.public,
-      },
-      include: {
-        author: { select: safeUserSelect },
-      },
-    });
+    const tierWeight: Record<SupportLevel, number> = {
+      [SupportLevel.L1]: 1,
+      [SupportLevel.L2]: 2,
+      [SupportLevel.L3]: 3,
+    };
 
-    // Log Activity
-    await this.prisma.activityEvent.create({
-      data: {
-        issueId,
-        projectId: existing.projectId,
-        userId: currentUser.id,
-        action: 'comment_added',
-        details: `posted ${dto.type || 'public'} comment on ${issueId}`,
-      },
-    });
-
-    // Trigger Comment Notification for assignee and reporter
-    const recipients = new Set<string>();
-    if (existing.assigneeId) recipients.add(existing.assigneeId);
-    if (existing.reporterId) recipients.add(existing.reporterId);
-
-    const snippet =
-      dto.content.length > 70 ? dto.content.slice(0, 70) + '...' : dto.content;
-
-    for (const recipientId of recipients) {
-      await this.notificationsService.createNotification({
-        userId: recipientId,
-        title: `New Comment on ${issueId}`,
-        message: `${currentUser.name || 'A team member'} commented: "${snippet}"`,
-        type: NotificationType.comment,
-        issueId,
-        actorId: currentUser.id,
-      });
+    if (tierWeight[dto.toLevel] <= tierWeight[issue.supportLevel]) {
+      throw new BadRequestException(
+        `Cannot escalate issue laterally or backwards from ${issue.supportLevel} to ${dto.toLevel}.`,
+      );
     }
 
-    return comment;
+    let assignedToUserId = dto.assignedToUserId ?? issue.assigneeId;
+    if (assignedToUserId) {
+      const userExists = await this.prisma.user.findUnique({ where: { id: assignedToUserId } });
+      if (!userExists) assignedToUserId = null;
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Create audit escalation record
+      const escalationRecord = await tx.escalationRecord.create({
+        data: {
+          issueId: id,
+          fromLevel: issue.supportLevel,
+          toLevel: dto.toLevel,
+          reason: dto.reason,
+          escalatedByUserId: userId,
+          assignedToUserId,
+        },
+      });
+
+      // 2. Add automated internal comment note
+      await tx.comment.create({
+        data: {
+          issueId: id,
+          authorId: userId,
+          type: 'internal',
+          content: `[Internal Escalation Note] Escalated from ${issue.supportLevel} to ${dto.toLevel}.\nReason: ${dto.reason}`,
+        },
+      });
+
+      // 3. Log activity event
+      await tx.activityEvent.create({
+        data: {
+          issueId: id,
+          userId,
+          action: 'escalated',
+          details: `Escalated ${id} (${issue.supportLevel} -> ${dto.toLevel}): ${dto.reason}`,
+        },
+      });
+
+      // 4. Update issue state
+      const updated = await tx.issue.update({
+        where: { id },
+        data: {
+          supportLevel: dto.toLevel,
+          isEscalated: true,
+          assigneeId: assignedToUserId,
+        },
+        include: {
+          assignee: true,
+          project: true,
+          sprint: true,
+          epic: true,
+          escalationHistory: {
+            orderBy: { timestamp: 'desc' },
+          },
+        },
+      });
+
+      return { ...updated, escalationRecord };
+    });
   }
 
   /**
-   * List comments for an issue.
+   * Remove issue permanently.
    */
-  async listComments(issueId: string): Promise<any[]> {
-    return this.prisma.comment.findMany({
-      where: { issueId },
-      include: { author: { select: safeUserSelect } },
-      orderBy: { createdAt: 'desc' },
-    });
+  async remove(id: string) {
+    await this.findOne(id);
+    await this.prisma.issue.delete({ where: { id } });
+    return { success: true, deletedId: id, message: `Issue ${id} has been successfully removed.` };
   }
 }

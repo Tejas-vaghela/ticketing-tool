@@ -1,33 +1,30 @@
-import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  MaxLength,
-  MinLength,
-  IsISO8601,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsDateString, IsOptional, MaxLength, IsEnum } from 'class-validator';
+import { SprintStatus } from '@prisma/client';
 
 export class CreateSprintDto {
   @IsString()
-  @IsNotEmpty({ message: 'projectId is required' })
-  projectId!: string;
+  @IsNotEmpty()
+  projectId: string;
 
   @IsString()
-  @IsNotEmpty({ message: 'Sprint name must not be empty' })
-  @MinLength(2, { message: 'Sprint name must be at least 2 characters' })
-  @MaxLength(80, { message: 'Sprint name must not exceed 80 characters' })
-  name!: string;
+  @IsNotEmpty()
+  @MaxLength(100)
+  name: string;
 
-  @IsISO8601({}, { message: 'startDate must be a valid ISO 8601 date string' })
-  @IsNotEmpty({ message: 'startDate is required' })
-  startDate!: string;
+  @IsDateString()
+  @IsNotEmpty()
+  startDate: string;
 
-  @IsISO8601({}, { message: 'endDate must be a valid ISO 8601 date string' })
-  @IsNotEmpty({ message: 'endDate is required' })
-  endDate!: string;
+  @IsDateString()
+  @IsNotEmpty()
+  endDate: string;
 
   @IsString()
   @IsOptional()
-  @MaxLength(500, { message: 'goal must not exceed 500 characters' })
+  @MaxLength(500)
   goal?: string;
+
+  @IsEnum(SprintStatus)
+  @IsOptional()
+  status?: SprintStatus = SprintStatus.planned;
 }

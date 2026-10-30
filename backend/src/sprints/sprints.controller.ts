@@ -7,124 +7,140 @@ import {
   Body,
   Param,
   Query,
+  UseGuards,
   HttpCode,
   HttpStatus,
-  UseGuards,
 } from '@nestjs/common';
+import { SprintsService } from './sprints.service.js';
+import { CreateSprintDto } from './dto/create-sprint.dto.js';
+import { UpdateSprintDto } from './dto/update-sprint.dto.js';
+import { CompleteSprintDto } from './dto/complete-sprint.dto.js';
+import { QuerySprintsDto } from './dto/query-sprints.dto.js';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../common/guards/roles.guard.js';
+import { Roles } from '../common/decorators/roles.decorator.js';
+import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { UserRole } from '@prisma/client';
-import { SprintsService, SprintListItem, CompleteSprintResult } from './sprints.service';
-import { CreateSprintDto } from './dto/create-sprint.dto';
-import { UpdateSprintDto } from './dto/update-sprint.dto';
-import { CompleteSprintDto } from './dto/complete-sprint.dto';
-import { QuerySprintsDto } from './dto/query-sprints.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-/**
- * SprintsController — REST API for /api/sprints
- *
- * All endpoints require a valid JWT (JwtAuthGuard applied at class level).
- * Role-restricted endpoints additionally apply RolesGuard via @Roles().
- *
- * RBAC Summary:
- *   GET    /sprints             — All authenticated roles
- *   POST   /sprints             — Admin, Project_Manager
- *   PATCH  /sprints/:id         — Admin, Project_Manager
- *   POST   /sprints/:id/start   — Admin, Project_Manager
- *   POST   /sprints/:id/complete— Admin, Project_Manager
- *   DELETE /sprints/:id         — Admin, Project_Manager
- */
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('sprints')
-@UseGuards(JwtAuthGuard)
 export class SprintsController {
   constructor(private readonly sprintsService: SprintsService) {}
 
-  // --------------------------------------------------------------------------
-  // GET /api/sprints
-  // List all sprints for a project with optional status filter.
-  // --------------------------------------------------------------------------
+  /**
+   * POST /api/sprints
+   * Create a new planned sprint. Restricted to Admin and Project Manager.
+   */
+  @Post()
+  @Roles(UserRole.Admin, UserRole.Project_Manager)
+  @HttpCode(HttpStatus.CREATED)
+  async create(@Body() dto: CreateSprintDto, @CurrentUser() user: any) {
+    const userId = user?.id || user?.sub;
+    return this.sprintsService.create(dto, userId);
+  }
+
+  /**
+   * GET /api/sprints
+   * Retrieve list of sprints with optional project and status filters.
+   */
   @Get()
-  @HttpCode(HttpStatus.OK)
-  async findAll(@Query() query: QuerySprintsDto): Promise<SprintListItem[]> {
+  async findAll(@Query() query: QuerySprintsDto) {
     return this.sprintsService.findAll(query);
   }
 
-  // --------------------------------------------------------------------------
-  // POST /api/sprints
-  // Create a new planned sprint.
-  // --------------------------------------------------------------------------
-  @Post()
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.Admin, UserRole.Project_Manager)
-  @HttpCode(HttpStatus.CREATED)
-  async create(
-    @Body() dto: CreateSprintDto,
-    @CurrentUser() user: any,
-  ): Promise<any> {
-    return this.sprintsService.create(dto, user);
+  /**
+   * GET /api/sprints/:id
+   * Retrieve complete sprint details with issues and calculated progress metrics.
+   */
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return this.sprintsService.findOne(id);
   }
 
-  // --------------------------------------------------------------------------
-  // PATCH /api/sprints/:id
-  // Update sprint name, goal, or dates.
-  // --------------------------------------------------------------------------
+  /**
+   * GET /api/sprints/:id/issues
+   * Retrieve issues assigned to a specific sprint.
+   */
+  @Get(':id/issues')
+  async getIssues(@Param('id') id: string) {
+    return this.sprintsService.getSprintIssues(id);
+  }
+
+  /**
+   * GET /api/sprints/:id/progress
+   * Retrieve delivery metrics and story point progress for a sprint.
+   */
+  @Get(':id/progress')
+  async getProgress(@Param('id') id: string) {
+    return this.sprintsService.getSprintProgress(id);
+  }
+
+  /**
+   * PATCH /api/sprints/:id
+   * Update mutable sprint metadata (name, dates, goal).
+   */
   @Patch(':id')
-  @UseGuards(RolesGuard)
   @Roles(UserRole.Admin, UserRole.Project_Manager)
-  @HttpCode(HttpStatus.OK)
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateSprintDto,
     @CurrentUser() user: any,
-  ): Promise<any> {
-    return this.sprintsService.update(id, dto, user);
+  ) {
+    const userId = user?.id || user?.sub;
+    return this.sprintsService.update(id, dto, userId);
   }
 
-  // --------------------------------------------------------------------------
-  // POST /api/sprints/:id/start
-  // Start a planned sprint (enforces single active sprint per project).
-  // --------------------------------------------------------------------------
+  /**
+   * POST /api/sprints/:id/start
+   * Start a planned sprint and activate execution.
+   */
   @Post(':id/start')
-  @UseGuards(RolesGuard)
   @Roles(UserRole.Admin, UserRole.Project_Manager)
   @HttpCode(HttpStatus.OK)
-  async start(
-    @Param('id') id: string,
-    @CurrentUser() user: any,
-  ): Promise<any> {
-    return this.sprintsService.start(id, user);
+  async start(@Param('id') id: string, @CurrentUser() user: any) {
+    const userId = user?.id || user?.sub;
+    return this.sprintsService.start(id, userId);
   }
 
-  // --------------------------------------------------------------------------
-  // POST /api/sprints/:id/complete
-  // Complete active sprint and roll over unresolved tickets.
-  // --------------------------------------------------------------------------
+  /**
+   * POST /api/sprints/:id/complete
+   * Complete active sprint and roll over unresolved tickets.
+   */
   @Post(':id/complete')
-  @UseGuards(RolesGuard)
   @Roles(UserRole.Admin, UserRole.Project_Manager)
   @HttpCode(HttpStatus.OK)
-  async complete(
+  async completePost(
     @Param('id') id: string,
     @Body() dto: CompleteSprintDto,
     @CurrentUser() user: any,
-  ): Promise<CompleteSprintResult> {
-    return this.sprintsService.complete(id, dto, user);
+  ) {
+    const userId = user?.id || user?.sub;
+    return this.sprintsService.complete(id, dto, userId);
   }
 
-  // --------------------------------------------------------------------------
-  // DELETE /api/sprints/:id
-  // Remove sprint; unassigns attached issues to Backlog.
-  // --------------------------------------------------------------------------
-  @Delete(':id')
-  @UseGuards(RolesGuard)
+  /**
+   * PATCH /api/sprints/:id/complete
+   * Alias route supporting PATCH /sprints/:id/complete convention.
+   */
+  @Patch(':id/complete')
   @Roles(UserRole.Admin, UserRole.Project_Manager)
-  @HttpCode(HttpStatus.OK)
-  async remove(
+  async completePatch(
     @Param('id') id: string,
+    @Body() dto: CompleteSprintDto,
     @CurrentUser() user: any,
-  ): Promise<{ success: boolean; id: string; message: string }> {
-    return this.sprintsService.remove(id, user);
+  ) {
+    const userId = user?.id || user?.sub;
+    return this.sprintsService.complete(id, dto, userId);
+  }
+
+  /**
+   * DELETE /api/sprints/:id
+   * Delete sprint. Unassigns contained issues to backlog.
+   */
+  @Delete(':id')
+  @Roles(UserRole.Admin, UserRole.Project_Manager)
+  async remove(@Param('id') id: string, @CurrentUser() user: any) {
+    const userId = user?.id || user?.sub;
+    return this.sprintsService.remove(id, userId);
   }
 }

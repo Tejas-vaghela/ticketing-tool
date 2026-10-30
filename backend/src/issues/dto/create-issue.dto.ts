@@ -1,42 +1,35 @@
-import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  IsEnum,
-  IsArray,
-  IsNumber,
-  IsISO8601,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsEnum, IsOptional, IsArray, IsInt, Min, IsDateString, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { IssueType, IssueStatus, Priority, SupportLevel } from '@prisma/client';
+import { normalizeIssueStatus } from '../status-mapper.js';
 
 export class CreateIssueDto {
   @IsString()
   @IsNotEmpty()
-  projectId!: string;
+  projectId: string;
 
   @IsString()
   @IsNotEmpty()
-  title!: string;
+  @MaxLength(255)
+  title: string;
 
   @IsString()
   @IsOptional()
   description?: string;
 
   @IsEnum(IssueType)
-  @IsOptional()
-  type?: IssueType;
+  type: IssueType;
 
+  @Transform(({ value }) => (value ? normalizeIssueStatus(value) ?? value : value))
   @IsEnum(IssueStatus)
   @IsOptional()
   status?: IssueStatus;
 
   @IsEnum(Priority)
-  @IsOptional()
-  priority?: Priority;
+  priority: Priority;
 
   @IsEnum(SupportLevel)
-  @IsOptional()
-  supportLevel?: SupportLevel;
+  supportLevel: SupportLevel;
 
   @IsString()
   @IsOptional()
@@ -55,11 +48,12 @@ export class CreateIssueDto {
   @IsOptional()
   labels?: string[];
 
-  @IsISO8601()
+  @IsDateString()
   @IsOptional()
   dueDate?: string;
 
-  @IsNumber()
+  @IsInt()
+  @Min(0)
   @IsOptional()
   storyPoints?: number;
 

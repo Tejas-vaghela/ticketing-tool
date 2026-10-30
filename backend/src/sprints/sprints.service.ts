@@ -2,81 +2,139 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  Logger,
+  ConflictException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { CreateSprintDto } from './dto/create-sprint.dto';
-import { UpdateSprintDto } from './dto/update-sprint.dto';
-import { CompleteSprintDto } from './dto/complete-sprint.dto';
-import { QuerySprintsDto } from './dto/query-sprints.dto';
-import { SprintStatus, IssueStatus, NotificationType } from '@prisma/client';
-import { NotificationsService } from '../notifications/notifications.service';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { CreateSprintDto } from './dto/create-sprint.dto.js';
+import { UpdateSprintDto } from './dto/update-sprint.dto.js';
+import { CompleteSprintDto } from './dto/complete-sprint.dto.js';
+import { QuerySprintsDto } from './dto/query-sprints.dto.js';
+import { SprintStatus, IssueStatus, Prisma } from '@prisma/client';
 
-export interface SprintListItem {
-  id: string;
-  projectId: string;
-  name: string;
-  startDate: Date;
-  endDate: Date;
-  status: SprintStatus;
-  goal: string | null;
-  completedDate: Date | null;
-  createdAt: Date;
-  issueCount: number;
+export interface SprintProgressMetrics {
+  totalIssues: number;
+  completedIssues: number;
+  openIssues: number;
   totalStoryPoints: number;
-  resolvedIssueCount: number;
-}
-
-export interface CompleteSprintResult {
-  sprint: {
-    id: string;
-    projectId: string;
-    name: string;
-    startDate: Date;
-    endDate: Date;
-    status: SprintStatus;
-    goal: string | null;
-    completedDate: Date | null;
-    createdAt: Date;
-  };
-  rolledOverCount: number;
-  targetSprintId: string | null;
+  completedStoryPoints: number;
+  remainingStoryPoints: number;
+  progressPercentage: number;
 }
 
 @Injectable()
 export class SprintsService {
-  private readonly logger = new Logger(SprintsService.name);
-
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly notificationsService: NotificationsService,
-  ) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * List all sprints for a project, optionally filtered by status, with aggregated ticket counts.
+   * Create a new sprint for a project with validation and status integrity.
    */
-  async findAll(query: QuerySprintsDto): Promise<SprintListItem[]> {
-    if (query.projectId) {
-      const project = await this.prisma.project.findUnique({
-        where: { id: query.projectId },
+  async create(dto: CreateSprintDto, userId?: string) {
+    // 1. Resolve and validate project existence (by ID or key)
+    const project = await this.prisma.project.findFirst({
+      where: {
+        OR: [{ id: dto.projectId }, { key: dto.projectId }],
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID or key '${dto.projectId}' was not found.`);
+    }
+
+    // 2. Validate date chronologies
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      throw new BadRequestException('Invalid startDate or endDate provided.');
+    }
+    if (endDate <= startDate) {
+      throw new BadRequestException(
+        `Sprint end date (${dto.endDate}) cannot be earlier than or equal to start date (${dto.startDate}).`,
+      );
+    }
+
+    // 3. If starting as active, enforce single active sprint per project rule
+    const targetStatus = dto.status ?? SprintStatus.planned;
+    if (targetStatus === SprintStatus.active) {
+      const activeSprint = await this.prisma.sprint.findFirst({
+        where: { projectId: project.id, status: SprintStatus.active },
       });
-      if (!project) {
-        throw new NotFoundException(`Project with identifier ${query.projectId} not found.`);
+      if (activeSprint) {
+        throw new ConflictException(
+          `Project '${project.name}' already has an active sprint ('${activeSprint.name}'). Complete it before creating another active sprint.`,
+        );
       }
     }
 
-    const where: any = {};
-    if (query.projectId) {
-      where.projectId = query.projectId;
+    let created: Awaited<ReturnType<typeof this.prisma.sprint.create>> | undefined;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const sprints = await this.prisma.sprint.findMany({ select: { id: true } });
+      const highestNumber = sprints.reduce((highest, sprint) => {
+        const match = /^sprint-(\d+)$/i.exec(sprint.id);
+        return match ? Math.max(highest, Number(match[1])) : highest;
+      }, 0);
+
+      try {
+        created = await this.prisma.sprint.create({
+          data: {
+            id: `sprint-${highestNumber + 1}`,
+            projectId: project.id,
+            name: dto.name.trim(),
+            startDate,
+            endDate,
+            goal: dto.goal?.trim() || null,
+            status: targetStatus,
+          },
+          include: {
+            project: { select: { id: true, key: true, name: true } },
+            _count: { select: { issues: true } },
+          },
+        });
+        break;
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          continue;
+        }
+        throw error;
+      }
     }
-    if (query.status) {
+
+    if (!created) {
+      throw new ConflictException('Could not allocate a unique Sprint ID. Please try again.');
+    }
+
+    // Record audit event if user context exists
+    if (userId) {
+      await this.logActivity(userId, project.id, 'sprint_created', `created sprint ${created.name}`);
+    }
+
+    return created;
+  }
+
+  /**
+   * Retrieve all sprints matching optional project and status filters.
+   * Includes calculated story points and completion progress for each sprint.
+   */
+  async findAll(query?: QuerySprintsDto) {
+    const where: Prisma.SprintWhereInput = {};
+
+    if (query?.projectId || query?.project) {
+      const rawProject = (query.projectId || query.project || '').trim();
+      if (rawProject && rawProject.toUpperCase() !== 'ALL') {
+        const proj = await this.prisma.project.findFirst({
+          where: { OR: [{ id: rawProject }, { key: rawProject }] },
+        });
+        where.projectId = proj ? proj.id : rawProject;
+      }
+    }
+
+    if (query?.status) {
       where.status = query.status;
     }
 
     const sprints = await this.prisma.sprint.findMany({
       where,
-      orderBy: { createdAt: 'asc' },
       include: {
+        project: { select: { id: true, key: true, name: true } },
         issues: {
           select: {
             id: true,
@@ -84,370 +142,418 @@ export class SprintsService {
             storyPoints: true,
           },
         },
+        _count: { select: { issues: true } },
       },
+      orderBy: [{ status: 'asc' }, { startDate: 'desc' }],
     });
 
     return sprints.map((sprint) => {
-      const issueCount = sprint.issues.length;
-      const totalStoryPoints = sprint.issues.reduce((sum, i) => sum + (i.storyPoints || 0), 0);
-      const resolvedIssueCount = sprint.issues.filter(
-        (i) => i.status === IssueStatus.Resolved || i.status === IssueStatus.Closed,
-      ).length;
-
-      const { issues, ...sprintData } = sprint;
+      const metrics = this.computeMetrics(sprint.issues);
       return {
-        ...sprintData,
-        issueCount,
-        totalStoryPoints,
-        resolvedIssueCount,
+        id: sprint.id,
+        projectId: sprint.projectId,
+        name: sprint.name,
+        startDate: sprint.startDate,
+        endDate: sprint.endDate,
+        status: sprint.status,
+        goal: sprint.goal,
+        completedDate: sprint.completedDate,
+        createdAt: sprint.createdAt,
+        project: sprint.project,
+        issueCount: sprint._count.issues,
+        ...metrics,
       };
     });
   }
 
   /**
-   * Create a new planned sprint iteration.
+   * Retrieve a single sprint by ID with contained issues and rollup metrics.
    */
-  async create(dto: CreateSprintDto, currentUser: { id: string }): Promise<any> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: dto.projectId },
-    });
-    if (!project) {
-      throw new NotFoundException(`Project with identifier ${dto.projectId} not found.`);
-    }
-
-    const start = new Date(dto.startDate);
-    const end = new Date(dto.endDate);
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      throw new BadRequestException('Invalid date format.');
-    }
-    if (end <= start) {
-      throw new BadRequestException('endDate must be chronologically after startDate.');
-    }
-
-    return await this.prisma.$transaction(async (tx) => {
-      const sprint = await tx.sprint.create({
-        data: {
-          projectId: dto.projectId,
-          name: dto.name.trim(),
-          startDate: start,
-          endDate: end,
-          status: SprintStatus.planned,
-          goal: dto.goal ? dto.goal.trim() : null,
+  async findOne(id: string) {
+    const sprint = await this.prisma.sprint.findUnique({
+      where: { id },
+      include: {
+        project: { select: { id: true, key: true, name: true } },
+        issues: {
+          include: {
+            assignee: { select: { id: true, name: true, email: true, avatar: true } },
+            epic: { select: { id: true, name: true, color: true } },
+          },
+          orderBy: { updatedDate: 'desc' },
         },
-      });
-
-      await tx.activityEvent.create({
-        data: {
-          projectId: dto.projectId,
-          userId: currentUser.id,
-          action: 'sprint_created',
-          details: JSON.stringify({
-            sprintId: sprint.id,
-            name: sprint.name,
-            startDate: sprint.startDate,
-            endDate: sprint.endDate,
-            creatorId: currentUser.id,
-          }),
-        },
-      });
-
-      return sprint;
+        _count: { select: { issues: true } },
+      },
     });
+
+    if (!sprint) {
+      throw new NotFoundException(`Sprint with ID '${id}' was not found.`);
+    }
+
+    const metrics = this.computeMetrics(sprint.issues);
+
+    return {
+      ...sprint,
+      ...metrics,
+    };
   }
 
   /**
-   * Update sprint metadata (name, goal, dates). Completed sprints cannot be modified.
+   * Find sprints belonging to a specific project.
    */
-  async update(id: string, dto: UpdateSprintDto, currentUser: { id: string }): Promise<any> {
-    const sprint = await this.prisma.sprint.findUnique({
-      where: { id },
-    });
-    if (!sprint) {
-      throw new NotFoundException(`Sprint with identifier ${id} not found.`);
-    }
-    if (sprint.status === SprintStatus.completed) {
-      throw new BadRequestException('Completed sprints cannot be modified or reopened.');
-    }
-
-    const newStart = dto.startDate ? new Date(dto.startDate) : sprint.startDate;
-    const newEnd = dto.endDate ? new Date(dto.endDate) : sprint.endDate;
-
-    if (isNaN(newStart.getTime()) || isNaN(newEnd.getTime())) {
-      throw new BadRequestException('Invalid date format.');
-    }
-    if (newEnd <= newStart) {
-      throw new BadRequestException('endDate must be chronologically after startDate.');
-    }
-
-    const updateData: any = {};
-    if (dto.name !== undefined) updateData.name = dto.name.trim();
-    if (dto.startDate !== undefined) updateData.startDate = newStart;
-    if (dto.endDate !== undefined) updateData.endDate = newEnd;
-    if (dto.goal !== undefined) updateData.goal = dto.goal ? dto.goal.trim() : null;
-
-    return await this.prisma.sprint.update({
-      where: { id },
-      data: updateData,
-    });
+  async findByProject(projectId: string) {
+    return this.findAll({ projectId });
   }
 
   /**
-   * Transition a planned sprint to active state.
-   * Enforces the single-active-sprint rule per project using pessimistic row locking on the parent Project.
+   * Update mutable fields of an existing sprint.
    */
-  async start(id: string, currentUser: { id: string }): Promise<any> {
-    const sprint = await this.prisma.sprint.findUnique({
-      where: { id },
-    });
+  async update(id: string, dto: UpdateSprintDto, userId?: string) {
+    const sprint = await this.prisma.sprint.findUnique({ where: { id } });
     if (!sprint) {
-      throw new NotFoundException(`Sprint with identifier ${id} not found.`);
-    }
-    if (sprint.status === SprintStatus.completed) {
-      throw new BadRequestException('Completed sprints cannot be restarted.');
-    }
-    if (sprint.status === SprintStatus.active) {
-      throw new BadRequestException(`Sprint ${sprint.name} is already active.`);
+      throw new NotFoundException(`Sprint with ID '${id}' was not found.`);
     }
 
-    return await this.prisma.$transaction(async (tx) => {
-      // 1. Lock parent Project row exclusively to serialize sprint activation for this project
-      await tx.$executeRaw`SELECT id FROM "Project" WHERE id = ${sprint.projectId} FOR UPDATE`;
+    const data: Prisma.SprintUpdateInput = {};
 
-      // 2. Safely verify that zero other sprints are active
-      const activeSprint = await tx.sprint.findFirst({
-        where: { projectId: sprint.projectId, status: SprintStatus.active },
-      });
+    if (dto.name !== undefined) {
+      data.name = dto.name.trim();
+    }
 
-      if (activeSprint && activeSprint.id !== id) {
+    if (dto.goal !== undefined) {
+      data.goal = dto.goal ? dto.goal.trim() : null;
+    }
+
+    // Date validations
+    const effectiveStart = dto.startDate ? new Date(dto.startDate) : sprint.startDate;
+    const effectiveEnd = dto.endDate ? new Date(dto.endDate) : sprint.endDate;
+
+    if (dto.startDate !== undefined || dto.endDate !== undefined) {
+      if (effectiveEnd <= effectiveStart) {
         throw new BadRequestException(
-          `Cannot start sprint. Project ${sprint.projectId} already has an active sprint: ${activeSprint.name}`,
+          `Sprint end date cannot be earlier than or equal to start date.`,
         );
       }
+      if (dto.startDate !== undefined) data.startDate = effectiveStart;
+      if (dto.endDate !== undefined) data.endDate = effectiveEnd;
+    }
 
-      const now = new Date();
-      const updated = await tx.sprint.update({
-        where: { id },
-        data: {
-          status: SprintStatus.active,
-          startDate: now,
-        },
-      });
-
-      await tx.activityEvent.create({
-        data: {
-          projectId: sprint.projectId,
-          userId: currentUser.id,
-          action: 'sprint_started',
-          details: JSON.stringify({
-            sprintId: id,
-            name: sprint.name,
-            startedAt: now,
-            startedBy: currentUser.id,
-          }),
-        },
-      });
-
-      // Notify project lead and team members about sprint start
-      const project = await tx.project.findUnique({
-        where: { id: sprint.projectId },
-        include: { members: { select: { id: true } } },
-      });
-      if (project) {
-        const recipients = new Set<string>();
-        if (project.leadId) recipients.add(project.leadId);
-        if (project.members) project.members.forEach((m) => recipients.add(m.id));
-
-        for (const recipientId of recipients) {
-          await this.notificationsService.createNotification(
-            {
-              userId: recipientId,
-              title: `Sprint Started: ${sprint.name}`,
-              message: `${sprint.name} has begun in project ${project.key}.`,
-              type: NotificationType.sprint,
-              actorId: currentUser.id,
-            },
-            tx,
+    // Status transitions
+    if (dto.status !== undefined) {
+      if (dto.status === SprintStatus.active && sprint.status !== SprintStatus.active) {
+        const activeSprint = await this.prisma.sprint.findFirst({
+          where: { projectId: sprint.projectId, status: SprintStatus.active, id: { not: id } },
+        });
+        if (activeSprint) {
+          throw new ConflictException(
+            `Project already has an active sprint ('${activeSprint.name}'). Complete it first.`,
           );
         }
       }
 
-      return {
-        id: updated.id,
-        status: updated.status,
-        startDate: updated.startDate,
-        message: `Sprint ${updated.name} successfully started.`,
-      };
+      data.status = dto.status;
+      if (dto.status === SprintStatus.completed && !sprint.completedDate) {
+        data.completedDate = new Date();
+      }
+    }
+
+    const updated = await this.prisma.sprint.update({
+      where: { id },
+      data,
+      include: {
+        project: { select: { id: true, key: true, name: true } },
+        _count: { select: { issues: true } },
+      },
     });
+
+    if (userId) {
+      await this.logActivity(userId, sprint.projectId, 'sprint_updated', `updated sprint ${updated.name}`);
+    }
+
+    return updated;
   }
 
   /**
-   * Complete an active sprint and atomically roll over unresolved tickets to a target sprint or Backlog.
+   * Start a planned sprint, transitioning it to 'active'.
+   * Enforces that only one sprint is active per project.
    */
-  async complete(
-    id: string,
-    dto: CompleteSprintDto,
-    currentUser: { id: string },
-  ): Promise<CompleteSprintResult> {
-    const sprint = await this.prisma.sprint.findUnique({
-      where: { id },
-    });
+  async start(id: string, userId?: string) {
+    const sprint = await this.prisma.sprint.findUnique({ where: { id } });
     if (!sprint) {
-      throw new NotFoundException(`Sprint with identifier ${id} not found.`);
+      throw new NotFoundException(`Sprint with ID '${id}' was not found.`);
     }
-    if (sprint.status !== SprintStatus.active) {
-      throw new BadRequestException(
-        `Only active sprints can be completed. Current status: ${sprint.status}`,
+
+    if (sprint.status === SprintStatus.active) {
+      return sprint;
+    }
+
+    if (sprint.status === SprintStatus.completed) {
+      throw new BadRequestException('Cannot start a sprint that has already been completed.');
+    }
+
+    // Check project exclusivity
+    const existingActive = await this.prisma.sprint.findFirst({
+      where: {
+        projectId: sprint.projectId,
+        status: SprintStatus.active,
+        id: { not: id },
+      },
+    });
+
+    if (existingActive) {
+      throw new ConflictException(
+        `Project already has an active sprint ('${existingActive.name}'). Complete it before starting '${sprint.name}'.`,
       );
     }
 
-    if (dto.targetSprintId) {
-      if (dto.targetSprintId === id) {
-        throw new BadRequestException('Target sprint cannot be the same as the sprint being completed.');
-      }
-      const targetSprint = await this.prisma.sprint.findUnique({
-        where: { id: dto.targetSprintId },
-      });
-      if (!targetSprint) {
-        throw new NotFoundException(`Target rollover sprint ${dto.targetSprintId} not found.`);
-      }
-      if (targetSprint.projectId !== sprint.projectId) {
-        throw new BadRequestException(
-          `Target sprint belongs to project ${targetSprint.projectId}, not sprint project ${sprint.projectId}.`,
-        );
-      }
-      if (targetSprint.status === SprintStatus.completed) {
-        throw new BadRequestException('Cannot roll over unresolved issues to a completed sprint.');
-      }
+    const started = await this.prisma.sprint.update({
+      where: { id },
+      data: { status: SprintStatus.active },
+      include: {
+        project: { select: { id: true, key: true, name: true } },
+        _count: { select: { issues: true } },
+      },
+    });
+
+    if (userId) {
+      await this.logActivity(userId, sprint.projectId, 'sprint_started', `started sprint ${sprint.name}`);
     }
 
-    return await this.prisma.$transaction(async (tx) => {
-      // Lock parent project row to serialize completion/rollover
-      await tx.$executeRaw`SELECT id FROM "Project" WHERE id = ${sprint.projectId} FOR UPDATE`;
+    return started;
+  }
 
-      // 1. Identify issues in this sprint that are NOT resolved or closed and belong to the sprint's project
-      const unresolvedIssues = await tx.issue.findMany({
-        where: {
-          sprintId: id,
-          projectId: sprint.projectId,
-          status: {
-            notIn: [IssueStatus.Resolved, IssueStatus.Closed],
-          },
-        },
-        select: { id: true },
-      });
-
-      const rolledOverCount = unresolvedIssues.length;
-
-      // 2. Reassign unresolved issues to targetSprintId (or null for Backlog)
-      if (rolledOverCount > 0) {
-        await tx.issue.updateMany({
-          where: {
-            sprintId: id,
-            projectId: sprint.projectId,
-            status: {
-              notIn: [IssueStatus.Resolved, IssueStatus.Closed],
-            },
-          },
-          data: {
-            sprintId: dto.targetSprintId || null,
-          },
-        });
+  /**
+   * Complete an active sprint, set status to 'completed', and atomically roll over
+   * unresolved issues to targetSprintId or the backlog.
+   */
+  async complete(id: string, dto: CompleteSprintDto, userId?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const sprint = await tx.sprint.findUnique({ where: { id } });
+      if (!sprint) {
+        throw new NotFoundException(`Sprint with ID '${id}' was not found.`);
       }
 
-      // 3. Mark sprint as completed
-      const completedDate = new Date();
+      if (sprint.status !== SprintStatus.active) {
+        throw new BadRequestException(
+          `Only 'active' sprints can be completed. Current status: '${sprint.status}'.`,
+        );
+      }
+
+      let destinationSprintId: string | null = null;
+      if (dto.targetSprintId && dto.targetSprintId !== 'backlog') {
+        const targetSprint = await tx.sprint.findUnique({ where: { id: dto.targetSprintId } });
+        if (!targetSprint) {
+          throw new NotFoundException(`Target rollover sprint '${dto.targetSprintId}' does not exist.`);
+        }
+        if (targetSprint.projectId !== sprint.projectId) {
+          throw new BadRequestException(
+            `Target sprint '${targetSprint.name}' belongs to a different project. Cannot roll over across projects.`,
+          );
+        }
+        destinationSprintId = targetSprint.id;
+      }
+
+      // Mark current sprint as completed
       const updatedSprint = await tx.sprint.update({
         where: { id },
         data: {
           status: SprintStatus.completed,
-          completedDate,
+          completedDate: new Date(),
+        },
+        include: {
+          project: { select: { id: true, key: true, name: true } },
         },
       });
 
-      // 4. Log ActivityEvent
-      await tx.activityEvent.create({
-        data: {
-          projectId: sprint.projectId,
-          userId: currentUser.id,
-          action: 'sprint_completed',
-          details: JSON.stringify({
-            sprintId: id,
-            name: sprint.name,
-            completedDate,
-            rolledOverCount,
-            targetSprintId: dto.targetSprintId || null,
-            completedBy: currentUser.id,
-          }),
+      // Find unresolved issues
+      const incompleteIssues = await tx.issue.findMany({
+        where: {
+          sprintId: id,
+          status: { notIn: [IssueStatus.Resolved, IssueStatus.Closed] },
+        },
+        select: { id: true },
+      });
+
+      const issueIds = incompleteIssues.map((i) => i.id);
+      if (issueIds.length > 0) {
+        await tx.issue.updateMany({
+          where: { id: { in: issueIds } },
+          data: { sprintId: destinationSprintId },
+        });
+      }
+
+      const completedIssuesCount = await tx.issue.count({
+        where: {
+          sprintId: id,
+          status: { in: [IssueStatus.Resolved, IssueStatus.Closed] },
         },
       });
 
-      // 5. Notify project lead and team members about sprint completion
-      const project = await tx.project.findUnique({
-        where: { id: sprint.projectId },
-        include: { members: { select: { id: true } } },
-      });
-      if (project) {
-        const recipients = new Set<string>();
-        if (project.leadId) recipients.add(project.leadId);
-        if (project.members) project.members.forEach((m) => recipients.add(m.id));
-
-        for (const recipientId of recipients) {
-          await this.notificationsService.createNotification(
-            {
-              userId: recipientId,
-              title: `Sprint Completed: ${sprint.name}`,
-              message: `${sprint.name} has been closed. ${rolledOverCount} tickets rolled over.`,
-              type: NotificationType.sprint,
-              actorId: currentUser.id,
-            },
-            tx,
-          );
-        }
+      if (userId) {
+        await tx.activityEvent.create({
+          data: {
+            userId,
+            projectId: sprint.projectId,
+            action: 'sprint_completed',
+            details: `completed sprint ${sprint.name}. Rolled over ${issueIds.length} unresolved issues to ${destinationSprintId ? 'sprint ' + destinationSprintId : 'Backlog'}.`,
+          },
+        });
       }
 
       return {
         sprint: updatedSprint,
-        rolledOverCount,
-        targetSprintId: dto.targetSprintId || null,
+        completedIssuesCount,
+        rolledOverIssuesCount: issueIds.length,
+        targetSprintId: destinationSprintId,
+        message: `Sprint '${sprint.name}' completed. ${issueIds.length} issues rolled over to ${destinationSprintId ? 'target sprint' : 'backlog'}.`,
       };
     });
   }
 
   /**
-   * Delete a sprint. In PostgreSQL/Prisma, Issue.sprintId has onDelete: SetNull,
-   * so issues safely revert to Backlog (sprintId = null) automatically.
+   * Delete a sprint. Contained issues are safely unassigned to the backlog (sprintId = null)
+   * through database SetNull foreign key cascades.
    */
-  async remove(id: string, currentUser: { id: string }): Promise<{ success: boolean; id: string; message: string }> {
+  async remove(id: string, userId?: string) {
     const sprint = await this.prisma.sprint.findUnique({
       where: { id },
+      include: { _count: { select: { issues: true } } },
     });
+
     if (!sprint) {
-      throw new NotFoundException(`Sprint with identifier ${id} not found.`);
+      throw new NotFoundException(`Sprint with ID '${id}' was not found.`);
     }
 
-    return await this.prisma.$transaction(async (tx) => {
-      await tx.sprint.delete({
-        where: { id },
-      });
+    const unassignedCount = sprint._count.issues;
 
-      await tx.activityEvent.create({
-        data: {
-          projectId: sprint.projectId,
-          userId: currentUser.id,
-          action: 'sprint_deleted',
-          details: JSON.stringify({
-            sprintId: id,
-            name: sprint.name,
-            deletedBy: currentUser.id,
-          }),
-        },
-      });
+    await this.prisma.sprint.delete({ where: { id } });
 
-      return {
-        success: true,
-        id,
-        message: `Sprint ${sprint.name} permanently removed. All associated issues unassigned to backlog.`,
-      };
+    if (userId) {
+      await this.logActivity(
+        userId,
+        sprint.projectId,
+        'sprint_deleted',
+        `deleted sprint ${sprint.name}. Unassigned ${unassignedCount} issues to backlog.`,
+      );
+    }
+
+    return {
+      success: true,
+      id,
+      unassignedIssuesCount: unassignedCount,
+      message: `Sprint '${sprint.name}' deleted successfully. ${unassignedCount} issues unassigned to backlog.`,
+    };
+  }
+
+  /**
+   * Retrieve all issues assigned to a specific sprint.
+   */
+  async getSprintIssues(id: string) {
+    const sprint = await this.prisma.sprint.findUnique({ where: { id } });
+    if (!sprint) {
+      throw new NotFoundException(`Sprint with ID '${id}' was not found.`);
+    }
+
+    return this.prisma.issue.findMany({
+      where: { sprintId: id },
+      include: {
+        assignee: { select: { id: true, name: true, email: true, avatar: true } },
+        project: { select: { id: true, key: true, name: true } },
+        epic: { select: { id: true, name: true, color: true } },
+      },
+      orderBy: { updatedDate: 'desc' },
     });
+  }
+
+  /**
+   * Calculate real-time delivery and story points progress for a sprint.
+   */
+  async getSprintProgress(id: string): Promise<SprintProgressMetrics> {
+    const sprint = await this.prisma.sprint.findUnique({
+      where: { id },
+      include: {
+        issues: {
+          select: { id: true, status: true, storyPoints: true },
+        },
+      },
+    });
+
+    if (!sprint) {
+      throw new NotFoundException(`Sprint with ID '${id}' was not found.`);
+    }
+
+    return this.computeMetrics(sprint.issues);
+  }
+
+  /**
+   * Helper to compute story point aggregates and completion ratios.
+   */
+  private computeMetrics(
+    issues: Array<{ id: string; status: IssueStatus; storyPoints: number | null }>,
+  ): SprintProgressMetrics {
+    const totalIssues = issues.length;
+    let completedIssues = 0;
+    let totalStoryPoints = 0;
+    let completedStoryPoints = 0;
+
+    for (const issue of issues) {
+      const isCompleted =
+        issue.status === IssueStatus.Resolved || issue.status === IssueStatus.Closed;
+      const points = issue.storyPoints || 0;
+
+      totalStoryPoints += points;
+      if (isCompleted) {
+        completedIssues += 1;
+        completedStoryPoints += points;
+      }
+    }
+
+    const openIssues = totalIssues - completedIssues;
+    const remainingStoryPoints = totalStoryPoints - completedStoryPoints;
+
+    let progressPercentage = 0;
+    if (totalStoryPoints > 0) {
+      progressPercentage = Math.round((completedStoryPoints / totalStoryPoints) * 100);
+    } else if (totalIssues > 0) {
+      progressPercentage = Math.round((completedIssues / totalIssues) * 100);
+    }
+
+    return {
+      totalIssues,
+      completedIssues,
+      openIssues,
+      totalStoryPoints,
+      completedStoryPoints,
+      remainingStoryPoints,
+      progressPercentage,
+    };
+  }
+
+  /**
+   * Internal helper to record activity logs gracefully.
+   */
+  private async logActivity(
+    userId: string,
+    projectId: string,
+    action: string,
+    details: string,
+  ) {
+    try {
+      const userExists = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+      if (userExists) {
+        await this.prisma.activityEvent.create({
+          data: {
+            userId: userExists.id,
+            projectId,
+            action,
+            details,
+          },
+        });
+      }
+    } catch {
+      // Gracefully continue without breaking main transaction
+    }
   }
 }
