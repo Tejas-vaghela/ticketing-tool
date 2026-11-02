@@ -17,7 +17,10 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "load:test": "powershell -ExecutionPolicy Bypass -File ../load-test/run-load-tests.ps1 -Target auth",
+    "load:stress": "powershell -ExecutionPolicy Bypass -File ../load-test/run-load-tests.ps1 -Target stress",
+    "load:all": "powershell -ExecutionPolicy Bypass -File ../load-test/run-load-tests.ps1 -Target all"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

@@ -11,3 +11,6 @@ coverage/
 .wrangler
 .dev.vars*
 !.dev.vars.example
+
+# k6 binary
+load-test/bin/
