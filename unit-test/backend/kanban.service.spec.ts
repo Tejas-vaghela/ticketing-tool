@@ -1,6 +1,6 @@
 const vi = jest;
-import { KanbanService, KANBAN_COLUMNS } from './kanban.service.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { KanbanService, KANBAN_COLUMNS } from '../../backend/src/kanban/kanban.service';
+import { PrismaService } from '../../backend/src/prisma/prisma.service';
 import { IssueStatus, Priority, SupportLevel } from '@prisma/client';
 import { BadRequestException } from '@nestjs/common';
 

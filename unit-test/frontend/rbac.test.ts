@@ -6,7 +6,7 @@ import {
   getAllowedPagesForRole,
   ALL_ROLES,
   PAGE_DEFINITIONS,
-} from './rbac';
+} from '../../frontend/src/services/rbac';
 
 describe('RBAC Service', () => {
   describe('PAGE_DEFINITIONS and ALL_ROLES', () => {

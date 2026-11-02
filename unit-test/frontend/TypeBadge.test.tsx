@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { TypeBadge } from './TypeBadge';
+import { TypeBadge } from '../../frontend/src/components/common/TypeBadge';
 
 describe('TypeBadge Component', () => {
   it('should render Bug type badge', () => {

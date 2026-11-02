@@ -1,8 +1,8 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { SLABadge } from './SLABadge';
-import { Issue } from '../../types';
+import { SLABadge } from '../../frontend/src/components/common/SLABadge';
+import { Issue } from '../../frontend/src/types';
 
 describe('SLABadge Component', () => {
   const mockIssue: Issue = {

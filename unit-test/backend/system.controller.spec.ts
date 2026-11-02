@@ -1,11 +1,11 @@
 const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
-import { SystemController } from './system.controller.js';
-import { SystemService } from './system.service.js';
+import { SystemController } from '../../backend/src/system/system.controller';
+import { SystemService } from '../../backend/src/system/system.service';
 import { Reflector } from '@nestjs/core';
-import { RolesGuard } from '../common/guards/roles.guard.js';
+import { RolesGuard } from '../../backend/src/common/guards/roles.guard';
 import { ServiceUnavailableException } from '@nestjs/common';
-import { SystemHealthResponseDto } from './dto/system-health.dto.js';
+import { SystemHealthResponseDto } from '../../backend/src/system/dto/system-health.dto';
 
 describe('SystemController', () => {
   let controller: SystemController;

@@ -1,7 +1,7 @@
 const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
-import { SearchService } from './search.service.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { SearchService } from '../../backend/src/search/search.service';
+import { PrismaService } from '../../backend/src/prisma/prisma.service';
 import { InternalServerErrorException } from '@nestjs/common';
 import {
   IssueType,

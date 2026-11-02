@@ -1,9 +1,9 @@
 const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
-import { SearchController } from './search.controller.js';
-import { SearchService } from './search.service.js';
+import { SearchController } from '../../backend/src/search/search.controller';
+import { SearchService } from '../../backend/src/search/search.service';
 import { Reflector } from '@nestjs/core';
-import { RolesGuard } from '../common/guards/roles.guard.js';
+import { RolesGuard } from '../../backend/src/common/guards/roles.guard';
 
 describe('SearchController', () => {
   let controller: SearchController;

@@ -1,7 +1,7 @@
 const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
-import { SprintsService } from './sprints.service.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { SprintsService } from '../../backend/src/sprints/sprints.service';
+import { PrismaService } from '../../backend/src/prisma/prisma.service';
 import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { SprintStatus, IssueStatus } from '@prisma/client';
 

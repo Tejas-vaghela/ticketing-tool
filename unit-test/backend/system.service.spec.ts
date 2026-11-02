@@ -1,7 +1,7 @@
 const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
-import { SystemService } from './system.service.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { SystemService } from '../../backend/src/system/system.service';
+import { PrismaService } from '../../backend/src/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestException } from '@nestjs/common';
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { StatusBadge } from './StatusBadge';
+import { StatusBadge } from '../../frontend/src/components/common/StatusBadge';
 
 describe('StatusBadge Component', () => {
   it('should render Open status correctly', () => {
