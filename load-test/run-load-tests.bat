@@ -12,3 +12,4 @@ if "%TARGET%"=="" set TARGET=auth
 powershell -ExecutionPolicy Bypass -File "%~dp0run-load-tests.ps1" -Target %TARGET%
 
 pause
+

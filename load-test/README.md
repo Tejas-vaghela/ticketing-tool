@@ -77,3 +77,4 @@ Each test verifies:
 - **`http_req_duration`**: 95% of requests must respond in less than **300ms** (`p(95) < 300ms`).
 - **`http_req_failed`**: Less than **1%** error rate under heavy traffic.
 - **`iterations` & `reqs/s`**: Request throughput per second.
+

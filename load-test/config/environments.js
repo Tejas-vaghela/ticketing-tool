@@ -15,3 +15,4 @@ export const AUTH_CREDENTIALS = {
     password: __ENV.SUPPORT_PASSWORD || 'support123',
   },
 };
+
