@@ -61,9 +61,9 @@ export class EpicsService {
     // IDs are global primary keys, so find the next number across all projects.
     // Retry a unique-key collision in case two Epics are created at once.
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const existingEpics = await this.prisma.epic.findMany({
+      const existingEpics = (await this.prisma.epic.findMany({
         select: { id: true },
-      });
+      })) || [];
       const highestNumber = existingEpics.reduce((highest, epic) => {
         const match = /^epic-(\d+)$/i.exec(epic.id);
         return match ? Math.max(highest, Number(match[1])) : highest;

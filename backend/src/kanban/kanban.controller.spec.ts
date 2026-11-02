@@ -2,7 +2,7 @@
 
 
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
 import { KanbanController } from './kanban.controller.js';
 import { KanbanService } from './kanban.service.js';

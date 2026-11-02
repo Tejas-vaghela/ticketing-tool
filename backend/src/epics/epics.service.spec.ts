@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
 import { EpicsService } from './epics.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -32,6 +32,7 @@ describe('EpicsService', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockPrismaService.epic.findMany.mockResolvedValue([]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EpicsService,

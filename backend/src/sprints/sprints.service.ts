@@ -67,7 +67,7 @@ export class SprintsService {
 
     let created: Awaited<ReturnType<typeof this.prisma.sprint.create>> | undefined;
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const sprints = await this.prisma.sprint.findMany({ select: { id: true } });
+      const sprints = (await this.prisma.sprint.findMany({ select: { id: true } })) || [];
       const highestNumber = sprints.reduce((highest, sprint) => {
         const match = /^sprint-(\d+)$/i.exec(sprint.id);
         return match ? Math.max(highest, Number(match[1])) : highest;

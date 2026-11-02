@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
 import { SprintsService } from './sprints.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -36,6 +36,8 @@ describe('SprintsService', () => {
   };
 
   beforeEach(async () => {
+    vi.clearAllMocks();
+    mockPrismaService.sprint.findMany.mockResolvedValue([]);
     vi.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -138,7 +140,7 @@ describe('SprintsService', () => {
 
   describe('complete', () => {
     it('should reject completing non-active sprint', async () => {
-      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+      mockPrismaService.$transaction.mockImplementation(async (callback: any) => {
         return callback({
           sprint: {
             findUnique: vi.fn().mockResolvedValue({
@@ -155,7 +157,7 @@ describe('SprintsService', () => {
     it('should complete active sprint and rollover unresolved issues', async () => {
       const mockTx = {
         sprint: {
-          findUnique: vi.fn().mockImplementation(({ where }) => {
+          findUnique: vi.fn().mockImplementation(({ where }: any) => {
             if (where.id === 'sprint-1') {
               return { id: 'sprint-1', projectId: 'proj-1', name: 'Sprint 1', status: SprintStatus.active };
             }
@@ -179,7 +181,7 @@ describe('SprintsService', () => {
         },
       };
 
-      mockPrismaService.$transaction.mockImplementation(async (cb) => cb(mockTx));
+      mockPrismaService.$transaction.mockImplementation(async (cb: any) => cb(mockTx));
 
       const result = await service.complete('sprint-1', { targetSprintId: 'sprint-2' }, 'user-1');
       expect(result.sprint.status).toBe(SprintStatus.completed);

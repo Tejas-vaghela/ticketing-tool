@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
 import { SystemService } from './system.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -110,8 +110,8 @@ describe('SystemService', () => {
       expect(health.status).toBe('ok');
       expect(health.services.database.status).toBe('up');
       expect(health.services.application.status).toBe('up');
-      expect(health.services.database.latencyMs).toBeTypeOf('number');
-      expect(health.uptime).toBeTypeOf('number');
+      expect(typeof health.services.database.latencyMs).toBe('number');
+      expect(typeof health.uptime).toBe('number');
       expect(health.timestamp).toBeDefined();
     });
 

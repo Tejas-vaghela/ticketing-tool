@@ -10,6 +10,10 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ActivityModule } from './activity/activity.module';
 import { IssuesModule } from './issues/issues.module';
 import { SavedFiltersModule } from './saved-filters/saved-filters.module';
+import { EpicsModule } from './epics/epics.module';
+import { KanbanModule } from './kanban/kanban.module';
+import { SearchModule } from './search/search.module';
+import { SystemModule } from './system/system.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -29,6 +33,10 @@ import { AppService } from './app.service';
     ActivityModule,
     IssuesModule,
     SavedFiltersModule,
+    EpicsModule,
+    KanbanModule,
+    SearchModule,
+    SystemModule,
   ],
   controllers: [AppController],
   providers: [AppService],

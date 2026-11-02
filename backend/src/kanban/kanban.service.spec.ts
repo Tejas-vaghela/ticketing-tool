@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const vi = jest;
 import { KanbanService, KANBAN_COLUMNS } from './kanban.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { IssueStatus, Priority, SupportLevel } from '@prisma/client';

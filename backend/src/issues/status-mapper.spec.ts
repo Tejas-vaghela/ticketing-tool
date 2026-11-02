@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+// jest globals
 import { IssueStatus } from '@prisma/client';
 import { normalizeIssueStatus } from './status-mapper.js';
 

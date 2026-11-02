@@ -12,7 +12,7 @@ import {
   DatabaseHealthStatus,
 } from './dto/system-health.dto.js';
 import { SystemInfoResponseDto } from './dto/system-info.dto.js';
-import bcrypt from 'bcrypt';
+import * as bcrypt from 'bcrypt';
 import {
   UserRole,
   SupportLevel,

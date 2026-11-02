@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
 import { IssuesController } from './issues.controller.js';
 import { IssuesService } from './issues.service.js';
