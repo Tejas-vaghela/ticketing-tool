@@ -34,3 +34,4 @@ export class ReportsController {
     return this.reportsService.getSlaMetrics(projectId);
   }
 }
+

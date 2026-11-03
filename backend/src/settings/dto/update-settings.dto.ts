@@ -50,3 +50,4 @@ export class UpdateSettingsDto {
   @IsOptional()
   rolePageAccess?: Record<string, any>;
 }
+
