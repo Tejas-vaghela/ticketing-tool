@@ -14,6 +14,8 @@ import { EpicsModule } from './epics/epics.module';
 import { KanbanModule } from './kanban/kanban.module';
 import { SearchModule } from './search/search.module';
 import { SystemModule } from './system/system.module';
+import { SettingsModule } from './settings/settings.module';
+import { ReportsModule } from './reports/reports.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -37,6 +39,8 @@ import { AppService } from './app.service';
     KanbanModule,
     SearchModule,
     SystemModule,
+    SettingsModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

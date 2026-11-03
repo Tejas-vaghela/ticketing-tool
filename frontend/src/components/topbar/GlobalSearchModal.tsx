@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, Bug, CheckSquare, Zap, Folder, User as UserIcon } from 'lucide-react';
+import { Search, X, Folder, Zap, Loader2 } from 'lucide-react';
 import { SupportBadge } from '../common/SupportBadge';
 import { PriorityBadge } from '../common/PriorityBadge';
 import { StatusBadge } from '../common/StatusBadge';
+import { searchApi, SearchResultItem } from '../../services/api';
 
 interface Props {
   isOpen: boolean;
@@ -14,6 +15,8 @@ interface Props {
 export const GlobalSearchModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const { issues, projects, epics, users } = useApp();
   const [query, setQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [remoteResults, setRemoteResults] = useState<SearchResultItem[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -22,14 +25,43 @@ export const GlobalSearchModal: React.FC<Props> = ({ isOpen, onClose }) => {
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
       setQuery('');
+      setRemoteResults([]);
+      setIsSearching(false);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 2) {
+      setRemoteResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const response = await searchApi.search({ q: trimmed, limit: 15 });
+        if (response && Array.isArray(response.results)) {
+          setRemoteResults(response.results);
+        }
+      } catch (err) {
+        // Fallback gracefully to local in-memory index
+        console.warn('[GlobalSearchModal] Remote search failed, falling back to local memory index:', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [query]);
 
   if (!isOpen) return null;
 
   const trimmed = query.trim().toLowerCase();
 
-  const matchingIssues = trimmed
+  // Combine local and remote issue matches, deduplicated by ID
+  const localMatchingIssues = trimmed
     ? issues.filter(issue => {
         const idMatch = issue.id.toLowerCase().includes(trimmed);
         const titleMatch = issue.title.toLowerCase().includes(trimmed);
@@ -40,16 +72,75 @@ export const GlobalSearchModal: React.FC<Props> = ({ isOpen, onClose }) => {
         const project = projects.find(p => p.id === issue.projectId);
         const projectMatch = project?.name.toLowerCase().includes(trimmed) || project?.key.toLowerCase().includes(trimmed);
         return idMatch || titleMatch || descMatch || labelMatch || assigneeMatch || projectMatch;
-      }).slice(0, 8)
+      })
     : [];
 
-  const matchingProjects = trimmed
+  const remoteIssues = remoteResults
+    .filter(r => r.type === 'issue')
+    .map(r => {
+      const existing = issues.find(i => i.id === r.id);
+      if (existing) return existing;
+      return {
+        id: r.id,
+        title: r.title,
+        description: r.subtitle || '',
+        status: (r.status as any) || 'Open',
+        priority: (r.priority as any) || 'Medium',
+        supportLevel: 'L1' as const,
+        projectId: r.projectId || 'proj-1',
+        labels: [],
+        reporterId: 'usr-1',
+        createdDate: new Date().toISOString(),
+        updatedDate: new Date().toISOString(),
+      };
+    });
+
+  const matchingIssues = Array.from(
+    new Map([...localMatchingIssues, ...remoteIssues].map(item => [item.id, item])).values()
+  ).slice(0, 10);
+
+  const localMatchingProjects = trimmed
     ? projects.filter(p => p.name.toLowerCase().includes(trimmed) || p.key.toLowerCase().includes(trimmed))
     : [];
+  const remoteProjects = remoteResults
+    .filter(r => r.type === 'project')
+    .map(r => {
+      const existing = projects.find(p => p.id === r.id);
+      if (existing) return existing;
+      return {
+        id: r.id,
+        name: r.title,
+        key: r.subtitle || r.id,
+        description: '',
+        color: '#3b82f6',
+        createdDate: new Date().toISOString(),
+        updatedDate: new Date().toISOString(),
+      };
+    });
+  const matchingProjects = Array.from(
+    new Map([...localMatchingProjects, ...remoteProjects].map(item => [item.id, item])).values()
+  ).slice(0, 5);
 
-  const matchingEpics = trimmed
+  const localMatchingEpics = trimmed
     ? epics.filter(e => e.name.toLowerCase().includes(trimmed) || e.description.toLowerCase().includes(trimmed))
     : [];
+  const remoteEpics = remoteResults
+    .filter(r => r.type === 'epic')
+    .map(r => {
+      const existing = epics.find(e => e.id === r.id);
+      if (existing) return existing;
+      return {
+        id: r.id,
+        name: r.title,
+        description: r.subtitle || '',
+        status: (r.status as any) || 'To Do',
+        color: '#8b5cf6',
+        projectId: r.projectId || 'proj-1',
+      };
+    });
+  const matchingEpics = Array.from(
+    new Map([...localMatchingEpics, ...remoteEpics].map(item => [item.id, item])).values()
+  ).slice(0, 5);
 
   const handleSelectIssue = (id: string) => {
     navigate(`/issues/${id}`);
@@ -80,6 +171,9 @@ export const GlobalSearchModal: React.FC<Props> = ({ isOpen, onClose }) => {
             placeholder="Search tickets by ID (INB-1024), keywords, labels, projects, epics..."
             className="flex-1 text-sm bg-transparent border-none text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none"
           />
+          {isSearching && (
+            <Loader2 size={16} className="text-blue-500 animate-spin shrink-0" />
+          )}
           {query && (
             <button
               onClick={() => setQuery('')}

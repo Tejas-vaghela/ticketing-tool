@@ -1,4 +1,4 @@
-import { User, Project, Attachment, Notification } from '../types';
+import { User, Project, Attachment, Notification, Sprint, Epic, ActivityEvent, Settings, SavedFilter } from '../types';
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
@@ -601,3 +601,327 @@ export const issuesApi = {
 
 
 
+
+
+// ============================================================================
+// EPICS API SERVICE (EpicsModule Integration)
+// ============================================================================
+
+export const epicsApi = {
+  /** GET /api/epics — Retrieve list of epics */
+  listEpics: async (params?: { projectId?: string; status?: string; search?: string }): Promise<Epic[]> => {
+    const query = new URLSearchParams();
+    if (params?.projectId) query.append('projectId', params.projectId);
+    if (params?.status) query.append('status', params.status);
+    if (params?.search) query.append('search', params.search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiRequest<Epic[]>(`/epics${qs}`);
+  },
+
+  /** GET /api/epics/:id — Retrieve single epic by ID */
+  getEpic: async (id: string): Promise<Epic> => {
+    return apiRequest<Epic>(`/epics/${encodeURIComponent(id)}`);
+  },
+
+  /** POST /api/epics — Create new epic */
+  createEpic: async (data: Partial<Epic>): Promise<Epic> => {
+    return apiRequest<Epic>('/epics', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** PATCH /api/epics/:id — Update epic */
+  updateEpic: async (id: string, data: Partial<Epic>): Promise<Epic> => {
+    return apiRequest<Epic>(`/epics/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** DELETE /api/epics/:id — Delete epic */
+  deleteEpic: async (id: string): Promise<{ success: boolean; message?: string }> => {
+    return apiRequest<{ success: boolean; message?: string }>(`/epics/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// ============================================================================
+// SPRINTS API SERVICE (SprintsModule Integration)
+// ============================================================================
+
+export const sprintsApi = {
+  /** GET /api/sprints — Retrieve sprints list */
+  listSprints: async (params?: { projectId?: string; status?: string }): Promise<Sprint[]> => {
+    const query = new URLSearchParams();
+    if (params?.projectId) query.append('projectId', params.projectId);
+    if (params?.status) query.append('status', params.status);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiRequest<Sprint[]>(`/sprints${qs}`);
+  },
+
+  /** GET /api/sprints/:id — Retrieve single sprint */
+  getSprint: async (id: string): Promise<Sprint> => {
+    return apiRequest<Sprint>(`/sprints/${encodeURIComponent(id)}`);
+  },
+
+  /** POST /api/sprints — Create sprint */
+  createSprint: async (data: Partial<Sprint>): Promise<Sprint> => {
+    return apiRequest<Sprint>('/sprints', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** PATCH /api/sprints/:id — Update sprint */
+  updateSprint: async (id: string, data: Partial<Sprint>): Promise<Sprint> => {
+    return apiRequest<Sprint>(`/sprints/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** POST /api/sprints/:id/start — Start sprint */
+  startSprint: async (id: string): Promise<Sprint> => {
+    return apiRequest<Sprint>(`/sprints/${encodeURIComponent(id)}/start`, {
+      method: 'POST',
+    });
+  },
+
+  /** POST /api/sprints/:id/complete — Complete sprint */
+  completeSprint: async (id: string): Promise<Sprint> => {
+    return apiRequest<Sprint>(`/sprints/${encodeURIComponent(id)}/complete`, {
+      method: 'POST',
+    });
+  },
+
+  /** DELETE /api/sprints/:id — Delete sprint */
+  deleteSprint: async (id: string): Promise<{ success: boolean; message?: string }> => {
+    return apiRequest<{ success: boolean; message?: string }>(`/sprints/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// ============================================================================
+// SEARCH API SERVICE (SearchModule Integration)
+// ============================================================================
+
+export interface SearchResultItem {
+  id: string;
+  type: 'issue' | 'project' | 'epic' | 'sprint' | 'user';
+  title: string;
+  subtitle?: string;
+  status?: string;
+  priority?: string;
+  projectId?: string;
+  meta?: Record<string, any>;
+}
+
+export interface SearchResponse {
+  query: string;
+  total: number;
+  results: SearchResultItem[];
+}
+
+export const searchApi = {
+  /** GET /api/search — Global instant search across tickets, projects, epics, sprints, users */
+  search: async (params: {
+    q: string;
+    type?: string;
+    projectId?: string;
+    limit?: number;
+    page?: number;
+  }): Promise<SearchResponse> => {
+    const query = new URLSearchParams();
+    query.append('q', params.q);
+    if (params.type) query.append('type', params.type);
+    if (params.projectId) query.append('projectId', params.projectId);
+    if (params.limit) query.append('limit', String(params.limit));
+    if (params.page) query.append('page', String(params.page));
+    return apiRequest<SearchResponse>(`/search?${query.toString()}`);
+  },
+};
+
+// ============================================================================
+// ACTIVITY API SERVICE (ActivityModule Integration)
+// ============================================================================
+
+export interface ActivityFeedResponse {
+  items: ActivityEvent[];
+  nextCursor?: string | null;
+  hasMore: boolean;
+  total: number;
+}
+
+export const activityApi = {
+  /** GET /api/activity — Workspace activity feed */
+  getFeed: async (params?: {
+    limit?: number;
+    cursor?: string;
+    projectId?: string;
+    issueId?: string;
+    action?: string;
+  }): Promise<ActivityFeedResponse> => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.append('limit', String(params.limit));
+    if (params?.cursor) query.append('cursor', params.cursor);
+    if (params?.projectId) query.append('projectId', params.projectId);
+    if (params?.issueId) query.append('issueId', params.issueId);
+    if (params?.action) query.append('action', params.action);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiRequest<ActivityFeedResponse>(`/activity${qs}`);
+  },
+
+  /** GET /api/activity/issues/:issueId — Ticket activity history */
+  getIssueActivity: async (issueId: string): Promise<ActivityEvent[]> => {
+    return apiRequest<ActivityEvent[]>(`/activity/issues/${encodeURIComponent(issueId)}`);
+  },
+
+  /** GET /api/activity/projects/:projectId — Project activity history */
+  getProjectActivity: async (projectId: string): Promise<ActivityEvent[]> => {
+    return apiRequest<ActivityEvent[]>(`/activity/projects/${encodeURIComponent(projectId)}`);
+  },
+};
+
+// ============================================================================
+// SAVED FILTERS API SERVICE (SavedFiltersModule Integration)
+// ============================================================================
+
+export const savedFiltersApi = {
+  /** GET /api/saved-filters — List saved filters */
+  listFilters: async (): Promise<SavedFilter[]> => {
+    return apiRequest<SavedFilter[]>('/saved-filters');
+  },
+
+  /** POST /api/saved-filters — Create a new saved filter */
+  createFilter: async (data: { name: string; filterConfig: Record<string, any>; isGlobal?: boolean }): Promise<SavedFilter> => {
+    return apiRequest<SavedFilter>('/saved-filters', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** PATCH /api/saved-filters/:id — Update an existing saved filter */
+  updateFilter: async (id: string, data: Partial<SavedFilter>): Promise<SavedFilter> => {
+    return apiRequest<SavedFilter>(`/saved-filters/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** DELETE /api/saved-filters/:id — Delete a saved filter */
+  deleteFilter: async (id: string): Promise<{ success: boolean; message?: string }> => {
+    return apiRequest<{ success: boolean; message?: string }>(`/saved-filters/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// ============================================================================
+// SYSTEM API SERVICE (SystemModule Integration)
+// ============================================================================
+
+export interface SystemHealth {
+  status: 'ok' | 'error';
+  database: 'connected' | 'disconnected';
+  uptimeSeconds: number;
+  timestamp: string;
+}
+
+export interface SystemInfo {
+  version: string;
+  environment: string;
+  database: string;
+  uptimeSeconds: number;
+  timestamp: string;
+}
+
+export const systemApi = {
+  /** GET /api/system/health — Public health & database connectivity check */
+  getHealth: async (): Promise<SystemHealth> => {
+    return apiRequest<SystemHealth>('/system/health');
+  },
+
+  /** GET /api/system/info — Runtime metadata and telemetry */
+  getInfo: async (): Promise<SystemInfo> => {
+    return apiRequest<SystemInfo>('/system/info');
+  },
+
+  /** GET /api/system/export — Full JSON database snapshot (Admin only) */
+  exportDatabase: async (): Promise<any> => {
+    return apiRequest<any>('/system/export');
+  },
+
+  /** POST /api/system/import — Restore database from backup JSON (Admin only) */
+  importDatabase: async (data: any): Promise<{ success: boolean; message: string; summary?: any }> => {
+    return apiRequest<{ success: boolean; message: string; summary?: any }>('/system/import', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** POST /api/system/reset — Reset database to initial factory state (Admin only) */
+  resetFactory: async (): Promise<{ success: boolean; message: string }> => {
+    return apiRequest<{ success: boolean; message: string }>('/system/reset', {
+      method: 'POST',
+    });
+  },
+};
+
+// ============================================================================
+// SETTINGS API SERVICE (SettingsModule Integration)
+// ============================================================================
+
+export const settingsApi = {
+  /** GET /api/settings — Retrieve workspace settings */
+  getSettings: async (): Promise<Settings> => {
+    return apiRequest<Settings>('/settings');
+  },
+
+  /** PATCH /api/settings — Update workspace settings (Admin only) */
+  updateSettings: async (data: Partial<Settings>): Promise<Settings> => {
+    return apiRequest<Settings>('/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+};
+
+// ============================================================================
+// REPORTS API SERVICE (ReportsModule Integration)
+// ============================================================================
+
+export interface ReportsSummary {
+  total: number;
+  breached: number;
+  atRisk: number;
+  within: number;
+  escalated: number;
+  complianceRate: number;
+  statusCounts: Record<string, number>;
+  priorityCounts: Record<string, number>;
+  tierCounts: Record<string, number>;
+  projects: Array<{ id: string; name: string; key: string; total: number; resolved: number }>;
+}
+
+export interface SlaMetrics extends ReportsSummary {
+  avgResolutionHours: number;
+  avgResponseHours: number;
+  resolvedCount: number;
+}
+
+export const reportsApi = {
+  /** GET /api/reports/summary — Aggregate metrics across issues & projects */
+  getSummary: async (projectId?: string): Promise<ReportsSummary> => {
+    const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+    return apiRequest<ReportsSummary>(`/reports/summary${qs}`);
+  },
+
+  /** GET /api/reports/sla — Detailed SLA compliance and duration metrics */
+  getSlaMetrics: async (projectId?: string): Promise<SlaMetrics> => {
+    const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+    return apiRequest<SlaMetrics>(`/reports/sla${qs}`);
+  },
+};

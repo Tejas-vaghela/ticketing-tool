@@ -36,6 +36,7 @@ import {
   Info
 } from 'lucide-react';
 import { exportAllDataAsJSON, importDataFromJSON, resetAllDataToSeed } from '../services/storage';
+import { systemApi, SystemHealth } from '../services/api';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 import { InboxLogo } from '../components/common/InboxLogo';
 import { 
@@ -168,6 +169,24 @@ export const AdminPanelPage: React.FC = () => {
   // Confirm delete modal
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState<boolean>(false);
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
+
+  React.useEffect(() => {
+    async function checkHealth() {
+      try {
+        const h = await systemApi.getHealth();
+        setSystemHealth(h);
+      } catch {
+        setSystemHealth({
+          status: 'error',
+          database: 'disconnected',
+          uptimeSeconds: 0,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+    checkHealth();
+  }, []);
 
   // File import ref
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -273,27 +292,54 @@ export const AdminPanelPage: React.FC = () => {
     addToast('SLA Rules Saved', 'System-wide SLA escalation policies updated.', 'success');
   };
 
-  const handleExport = () => {
-    const jsonStr = exportAllDataAsJSON();
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `inbox-admin-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    addToast('Export Successful', 'Database JSON backup downloaded.', 'success');
+  const handleExport = async () => {
+    try {
+      const dump = await systemApi.exportDatabase();
+      const jsonStr = JSON.stringify(dump, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `inbox-database-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast('Export Successful', 'PostgreSQL database snapshot downloaded.', 'success');
+    } catch (err) {
+      console.warn('[AdminPanel] Backend exportDatabase failed, falling back to local snapshot:', err);
+      const jsonStr = exportAllDataAsJSON();
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `inbox-admin-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast('Export Successful', 'Database JSON backup downloaded.', 'success');
+    }
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = event => {
+    reader.onload = async event => {
       const content = event.target?.result as string;
+      try {
+        const parsed = JSON.parse(content);
+        const res = await systemApi.importDatabase(parsed);
+        if (res && res.success) {
+          addToast('Import Successful', 'Database restored from backup snapshot.', 'success');
+          setTimeout(() => window.location.reload(), 800);
+          return;
+        }
+      } catch (apiErr) {
+        console.warn('[AdminPanel] Backend importDatabase failed, falling back to local import:', apiErr);
+      }
+
       const success = importDataFromJSON(content);
       if (success) {
-        window.location.reload();
+        addToast('Import Successful', 'Local database restored from backup.', 'success');
+        setTimeout(() => window.location.reload(), 800);
       } else {
         addToast('Import Failed', 'Invalid JSON backup format.', 'error');
       }
@@ -302,7 +348,12 @@ export const AdminPanelPage: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleResetData = () => {
+  const handleResetData = async () => {
+    try {
+      await systemApi.resetFactory();
+    } catch (err) {
+      console.warn('[AdminPanel] Backend resetFactory failed, falling back to local reset:', err);
+    }
     resetAllDataToSeed();
     window.location.reload();
   };
@@ -1363,6 +1414,20 @@ export const AdminPanelPage: React.FC = () => {
               Offline JSON backup portability, schema migration, and factory reset controls.
             </p>
           </div>
+
+          {systemHealth && (
+            <div className="p-3.5 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className={`w-2.5 h-2.5 rounded-full ${systemHealth.database === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                  PostgreSQL Engine: {systemHealth.database === 'connected' ? 'Connected & Healthy' : 'Offline / Standalone Mode'}
+                </span>
+              </div>
+              <span className="font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
+                Uptime: {Math.floor(systemHealth.uptimeSeconds)}s
+              </span>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 shadow-xs">

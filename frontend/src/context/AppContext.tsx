@@ -18,7 +18,19 @@ import {
 } from '../types';
 import { storage } from '../services/storage';
 import { INITIAL_USERS } from '../data/seedData';
-import { authApi, usersApi, projectsApi, notificationsApi, issuesApi, tokenStorage } from '../services/api';
+import { 
+  authApi, 
+  usersApi, 
+  projectsApi, 
+  notificationsApi, 
+  issuesApi, 
+  epicsApi,
+  sprintsApi,
+  savedFiltersApi,
+  settingsApi,
+  activityApi,
+  tokenStorage 
+} from '../services/api';
 
 export interface ToastItem {
   id: string;
@@ -229,10 +241,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setIsAuthenticated(true);
 
           setIsNotificationsLoading(true);
-          const [usersRes, projectsRes, notifsRes] = await Promise.allSettled([
+          const [
+            usersRes,
+            projectsRes,
+            notifsRes,
+            issuesRes,
+            epicsRes,
+            sprintsRes,
+            filtersRes,
+            settingsRes,
+            activityRes,
+          ] = await Promise.allSettled([
             usersApi.listUsers(),
             projectsApi.listProjects(),
             notificationsApi.getNotifications(),
+            issuesApi.listIssues(),
+            epicsApi.listEpics(),
+            sprintsApi.listSprints(),
+            savedFiltersApi.listFilters(),
+            settingsApi.getSettings(),
+            activityApi.getFeed({ limit: 50 }),
           ]);
 
           if (usersRes.status === 'fulfilled' && Array.isArray(usersRes.value) && usersRes.value.length > 0) {
@@ -261,6 +289,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             console.error('[Session Verification] Failed to fetch notifications:', notifsRes.reason);
             setNotificationsError(notifsRes.reason instanceof Error ? notifsRes.reason.message : 'Failed to load notifications.');
           }
+
+          if (issuesRes.status === 'fulfilled' && Array.isArray(issuesRes.value) && issuesRes.value.length > 0) {
+            setIssues(issuesRes.value);
+            storage.saveIssues(issuesRes.value);
+          }
+
+          if (epicsRes.status === 'fulfilled' && Array.isArray(epicsRes.value) && epicsRes.value.length > 0) {
+            setEpics(epicsRes.value);
+            storage.saveEpics(epicsRes.value);
+          }
+
+          if (sprintsRes.status === 'fulfilled' && Array.isArray(sprintsRes.value) && sprintsRes.value.length > 0) {
+            setSprints(sprintsRes.value);
+            storage.saveSprints(sprintsRes.value);
+          }
+
+          if (filtersRes.status === 'fulfilled' && Array.isArray(filtersRes.value) && filtersRes.value.length > 0) {
+            const normalized = filtersRes.value.map((f: any) => ({
+              ...f,
+              filters: f.filters || f.filterConfig || {},
+            }));
+            setSavedFilters(normalized);
+            storage.saveSavedFilters(normalized);
+          }
+
+          if (settingsRes.status === 'fulfilled' && settingsRes.value) {
+            setSettings(settingsRes.value);
+            storage.saveSettings(settingsRes.value);
+          }
+
+          if (activityRes.status === 'fulfilled' && activityRes.value) {
+            const feedItems = Array.isArray(activityRes.value) 
+              ? activityRes.value 
+              : ((activityRes.value as any).items || []);
+            if (feedItems.length > 0) {
+              setActivity(feedItems);
+              storage.saveActivity(feedItems);
+            }
+          }
+
           setIsNotificationsLoading(false);
         } else {
           activeUserIdRef.current = null;
@@ -890,36 +958,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [currentUser, logActivity, addToast]);
 
   // Sprint Actions
-  const createSprint = useCallback((data: Omit<Sprint, 'id'>) => {
-    const newSprint: Sprint = {
+  const createSprint = useCallback(async (data: Omit<Sprint, 'id'>) => {
+    const tempId = 'sprint-' + (sprints.length + 1);
+    const tempSprint: Sprint = {
       ...data,
-      id: 'sprint-' + (sprints.length + 1),
+      id: tempId,
     };
     setSprints(prev => {
-      const next = [...prev, newSprint];
+      const next = [...prev, tempSprint];
       storage.saveSprints(next);
       return next;
     });
+
+    try {
+      const created = await sprintsApi.createSprint(data);
+      if (created && created.id) {
+        setSprints(prev => {
+          const next = prev.map(s => s.id === tempId ? created : s);
+          storage.saveSprints(next);
+          return next;
+        });
+        addToast('Sprint Created', `${data.name} is ready.`, 'success');
+        return created;
+      }
+    } catch (err) {
+      console.warn('[AppContext] Backend createSprint error, persisted locally:', err);
+    }
+
     addToast('Sprint Created', `${data.name} is ready.`, 'success');
-    return newSprint;
+    return tempSprint;
   }, [sprints.length, addToast]);
 
-  const updateSprint = useCallback((id: string, data: Partial<Sprint>) => {
+  const updateSprint = useCallback(async (id: string, data: Partial<Sprint>) => {
     setSprints(prev => {
       const next = prev.map(s => s.id === id ? { ...s, ...data } : s);
       storage.saveSprints(next);
       return next;
     });
+    try {
+      await sprintsApi.updateSprint(id, data);
+    } catch (err) {
+      console.warn('[AppContext] Backend updateSprint error, persisted locally:', err);
+    }
     addToast('Sprint Updated', '', 'info');
   }, [addToast]);
 
-  const startSprint = useCallback((id: string) => {
+  const startSprint = useCallback(async (id: string) => {
     const target = sprints.find(s => s.id === id);
     setSprints(prev => {
       const next = prev.map(s => s.id === id ? { ...s, status: 'active' as const } : s);
       storage.saveSprints(next);
       return next;
     });
+
+    try {
+      await sprintsApi.startSprint(id);
+    } catch (err) {
+      console.warn('[AppContext] Backend startSprint error, persisted locally:', err);
+    }
 
     if (target) {
       logActivity({
@@ -937,7 +1033,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addToast('Sprint Started', 'Active sprint initiated.', 'success');
   }, [currentUser, sprints, logActivity, pushNotification, addToast]);
 
-  const completeSprint = useCallback((id: string, targetSprintId?: string) => {
+  const completeSprint = useCallback(async (id: string, targetSprintId?: string) => {
     const target = sprints.find(s => s.id === id);
     setSprints(prev => {
       const next = prev.map(s => s.id === id ? { ...s, status: 'completed' as const, completedDate: new Date().toISOString() } : s);
@@ -960,6 +1056,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return issuesNext;
     });
 
+    try {
+      await sprintsApi.completeSprint(id);
+    } catch (err) {
+      console.warn('[AppContext] Backend completeSprint error, persisted locally:', err);
+    }
+
     if (target) {
       logActivity({
         projectId: target.projectId,
@@ -976,7 +1078,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addToast('Sprint Completed', 'Sprint finalized.', 'success');
   }, [currentUser, sprints, logActivity, pushNotification, addToast]);
 
-  const deleteSprint = useCallback((id: string) => {
+  const deleteSprint = useCallback(async (id: string) => {
     setSprints(prev => {
       const next = prev.filter(s => s.id !== id);
       storage.saveSprints(next);
@@ -988,39 +1090,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       storage.saveIssues(next);
       return next;
     });
+    try {
+      await sprintsApi.deleteSprint(id);
+    } catch (err) {
+      console.warn('[AppContext] Backend deleteSprint error, persisted locally:', err);
+    }
     addToast('Sprint Deleted', '', 'warning');
   }, [addToast]);
 
   // Epic Actions
-  const createEpic = useCallback((data: Omit<Epic, 'id'>) => {
-    const newEpic: Epic = {
+  const createEpic = useCallback(async (data: Omit<Epic, 'id'>) => {
+    const tempId = 'epic-' + (epics.length + 1);
+    const tempEpic: Epic = {
       ...data,
-      id: 'epic-' + (epics.length + 1),
+      id: tempId,
     };
     setEpics(prev => {
-      const next = [...prev, newEpic];
+      const next = [...prev, tempEpic];
       storage.saveEpics(next);
       return next;
     });
+
+    try {
+      const created = await epicsApi.createEpic(data);
+      if (created && created.id) {
+        setEpics(prev => {
+          const next = prev.map(e => e.id === tempId ? created : e);
+          storage.saveEpics(next);
+          return next;
+        });
+        addToast('Epic Created', `${data.name} created.`, 'success');
+        return created;
+      }
+    } catch (err) {
+      console.warn('[AppContext] Backend createEpic error, persisted locally:', err);
+    }
+
     addToast('Epic Created', `${data.name} created.`, 'success');
-    return newEpic;
+    return tempEpic;
   }, [epics.length, addToast]);
 
-  const updateEpic = useCallback((id: string, data: Partial<Epic>) => {
+  const updateEpic = useCallback(async (id: string, data: Partial<Epic>) => {
     setEpics(prev => {
       const next = prev.map(e => e.id === id ? { ...e, ...data } : e);
       storage.saveEpics(next);
       return next;
     });
+    try {
+      await epicsApi.updateEpic(id, data);
+    } catch (err) {
+      console.warn('[AppContext] Backend updateEpic error, persisted locally:', err);
+    }
     addToast('Epic Updated', '', 'info');
   }, [addToast]);
 
-  const deleteEpic = useCallback((id: string) => {
+  const deleteEpic = useCallback(async (id: string) => {
     setEpics(prev => {
       const next = prev.filter(e => e.id !== id);
       storage.saveEpics(next);
       return next;
     });
+    setIssues(prev => {
+      const next = prev.map(i => i.epicId === id ? { ...i, epicId: undefined } : i);
+      storage.saveIssues(next);
+      return next;
+    });
+    try {
+      await epicsApi.deleteEpic(id);
+    } catch (err) {
+      console.warn('[AppContext] Backend deleteEpic error, persisted locally:', err);
+    }
     addToast('Epic Removed', '', 'warning');
   }, [addToast]);
 
@@ -1294,12 +1433,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [notifications, addToast]);
 
   // Settings
-  const updateSettings = useCallback((newSettings: Partial<Settings>) => {
+  const updateSettings = useCallback(async (newSettings: Partial<Settings>) => {
     setSettings(prev => {
       const next = { ...prev, ...newSettings };
       storage.saveSettings(next);
       return next;
     });
+    try {
+      await settingsApi.updateSettings(newSettings);
+    } catch (err) {
+      console.warn('[AppContext] Backend updateSettings error, persisted locally:', err);
+    }
     addToast('Settings Saved', 'Preferences have been persisted.', 'success');
   }, [addToast]);
 
@@ -1320,9 +1464,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [addToast]);
 
   // Filters
-  const saveFilter = useCallback((name: string, filters: SavedFilter['filters']) => {
+  const saveFilter = useCallback(async (name: string, filters: SavedFilter['filters']) => {
+    const tempId = 'filter-' + Date.now();
     const newFilter: SavedFilter = {
-      id: 'filter-' + Date.now(),
+      id: tempId,
       name,
       filters,
     };
@@ -1331,15 +1476,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       storage.saveSavedFilters(next);
       return next;
     });
+
+    try {
+      const created = await savedFiltersApi.createFilter({
+        name,
+        filterConfig: filters,
+      });
+      if (created && created.id) {
+        setSavedFilters(prev => {
+          const next = prev.map(f => f.id === tempId ? { ...created, filters: (created as any).filterConfig || filters } : f);
+          storage.saveSavedFilters(next);
+          return next;
+        });
+      }
+    } catch (err) {
+      console.warn('[AppContext] Backend saveFilter error, persisted locally:', err);
+    }
+
     addToast('Filter Saved', `Filter "${name}" saved to your list.`, 'success');
   }, [addToast]);
 
-  const deleteFilter = useCallback((id: string) => {
+  const deleteFilter = useCallback(async (id: string) => {
     setSavedFilters(prev => {
       const next = prev.filter(f => f.id !== id);
       storage.saveSavedFilters(next);
       return next;
     });
+    try {
+      await savedFiltersApi.deleteFilter(id);
+    } catch (err) {
+      console.warn('[AppContext] Backend deleteFilter error, persisted locally:', err);
+    }
     addToast('Filter Removed', '', 'info');
   }, [addToast]);
 

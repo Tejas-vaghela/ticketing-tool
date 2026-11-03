@@ -25,6 +25,7 @@ import {
   Award
 } from 'lucide-react';
 import { calculateSLAInfo } from '../services/storage';
+import { reportsApi, ReportsSummary } from '../services/api';
 
 const COLORS = ['#3b82f6', '#06b6d4', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444'];
 const PRIORITY_COLORS: Record<string, string> = {
@@ -37,9 +38,33 @@ const PRIORITY_COLORS: Record<string, string> = {
 
 export const ReportsPage: React.FC = () => {
   const { issues, projects, users, addToast } = useApp();
+  const [backendSummary, setBackendSummary] = React.useState<ReportsSummary | null>(null);
+
+  React.useEffect(() => {
+    async function loadReports() {
+      try {
+        const sum = await reportsApi.getSummary();
+        setBackendSummary(sum);
+      } catch (err) {
+        console.warn('[ReportsPage] Backend reports fetch failed, using computed metrics:', err);
+      }
+    }
+    loadReports();
+  }, [issues.length]);
 
   // Aggregate Metrics
   const stats = useMemo(() => {
+    if (backendSummary) {
+      return {
+        total: backendSummary.total,
+        breached: backendSummary.breached,
+        atRisk: backendSummary.atRisk,
+        within: backendSummary.within,
+        escalated: backendSummary.escalated,
+        complianceRate: backendSummary.complianceRate,
+      };
+    }
+
     let totalBreached = 0;
     let totalAtRisk = 0;
     let totalWithinSLA = 0;
@@ -66,7 +91,7 @@ export const ReportsPage: React.FC = () => {
       escalated: totalEscalated,
       complianceRate: slaComplianceRate,
     };
-  }, [issues]);
+  }, [issues, backendSummary]);
 
   // Escalations by Tier
   const tierData = useMemo(() => {
@@ -114,7 +139,7 @@ export const ReportsPage: React.FC = () => {
       name,
       count,
     }));
-  }, [issues]);
+  }, [issues, backendSummary]);
 
   // Export CSV function
   const handleExportCSV = () => {
