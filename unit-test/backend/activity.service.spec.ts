@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ActivityService } from '../../backend/src/activity/activity.service';
-import { PrismaService } from '../../backend/src/prisma/prisma.service';
+import { ActivityService } from './activity.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('ActivityService', () => {

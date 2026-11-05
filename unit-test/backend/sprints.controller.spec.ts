@@ -1,10 +1,10 @@
 const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
-import { SprintsController } from '../../backend/src/sprints/sprints.controller';
-import { SprintsService } from '../../backend/src/sprints/sprints.service';
-import { PrismaService } from '../../backend/src/prisma/prisma.service';
+import { SprintsController } from './sprints.controller.js';
+import { SprintsService } from './sprints.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { Reflector } from '@nestjs/core';
-import { RolesGuard } from '../../backend/src/common/guards/roles.guard';
+import { RolesGuard } from '../common/guards/roles.guard.js';
 import { SprintStatus, UserRole } from '@prisma/client';
 
 describe('SprintsController', () => {

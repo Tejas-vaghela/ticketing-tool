@@ -321,14 +321,12 @@ export class AuthService {
         },
       });
 
-      // In production this token would be emailed to the user.
-      // For development we log it so the flow can be tested without a mailer.
-      this.logger.log(
-        `[DEV] Password reset token for ${user.email}: ${rawToken} (valid for 1 hour)`,
-      );
-      this.logger.log(
-        `[DEV] Reset URL: http://localhost:3000/reset-password?token=${rawToken}`,
-      );
+      // In production this token is dispatched to the user over secure SMTP/TLS.
+      if (process.env.NODE_ENV !== 'production') {
+        this.logger.debug(
+          `[DEV ONLY] Password reset link generated for ${user.email} (token length: ${rawToken.length})`,
+        );
+      }
     } catch (err) {
       // Log internally, but always return the generic message
       this.logger.error(

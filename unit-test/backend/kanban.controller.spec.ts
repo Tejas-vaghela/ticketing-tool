@@ -4,11 +4,11 @@
 
 const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
-import { KanbanController } from '../../backend/src/kanban/kanban.controller';
-import { KanbanService } from '../../backend/src/kanban/kanban.service';
-import { PrismaService } from '../../backend/src/prisma/prisma.service';
+import { KanbanController } from './kanban.controller.js';
+import { KanbanService } from './kanban.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { Reflector } from '@nestjs/core';
-import { RolesGuard } from '../../backend/src/common/guards/roles.guard';
+import { RolesGuard } from '../common/guards/roles.guard.js';
 import { IssueStatus } from '@prisma/client';
 
 describe('KanbanController', () => {

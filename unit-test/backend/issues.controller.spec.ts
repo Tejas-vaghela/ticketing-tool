@@ -1,10 +1,10 @@
 const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
-import { IssuesController } from '../../backend/src/issues/issues.controller';
-import { IssuesService } from '../../backend/src/issues/issues.service';
-import { PrismaService } from '../../backend/src/prisma/prisma.service';
+import { IssuesController } from './issues.controller.js';
+import { IssuesService } from './issues.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { Reflector } from '@nestjs/core';
-import { RolesGuard } from '../../backend/src/common/guards/roles.guard';
+import { RolesGuard } from '../common/guards/roles.guard.js';
 import { IssueStatus, Priority, SupportLevel, IssueType, UserRole } from '@prisma/client';
 
 describe('IssuesController', () => {

@@ -1,10 +1,10 @@
 const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
-import { EpicsController } from '../../backend/src/epics/epics.controller';
-import { EpicsService } from '../../backend/src/epics/epics.service';
-import { PrismaService } from '../../backend/src/prisma/prisma.service';
+import { EpicsController } from './epics.controller.js';
+import { EpicsService } from './epics.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { Reflector } from '@nestjs/core';
-import { RolesGuard } from '../../backend/src/common/guards/roles.guard';
+import { RolesGuard } from '../common/guards/roles.guard.js';
 import { EpicStatus, UserRole } from '@prisma/client';
 
 describe('EpicsController', () => {

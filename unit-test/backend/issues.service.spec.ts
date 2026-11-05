@@ -1,6 +1,6 @@
 const vi = jest;
-import { IssuesService } from '../../backend/src/issues/issues.service';
-import { PrismaService } from '../../backend/src/prisma/prisma.service';
+import { IssuesService } from './issues.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { IssueStatus, Priority, SupportLevel } from '@prisma/client';
 import { BadRequestException } from '@nestjs/common';
 

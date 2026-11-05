@@ -1,7 +1,7 @@
 const vi = jest;
 import { Test, TestingModule } from '@nestjs/testing';
-import { EpicsService } from '../../backend/src/epics/epics.service';
-import { PrismaService } from '../../backend/src/prisma/prisma.service';
+import { EpicsService } from './epics.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { EpicStatus, IssueStatus } from '@prisma/client';
 

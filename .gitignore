@@ -14,3 +14,8 @@ coverage/
 
 # k6 binary
 load-test/bin/
+
+# Local uploads
+backend/uploads/attachments/*
+!backend/uploads/attachments/.gitkeep
+

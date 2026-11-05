@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   InternalServerErrorException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -457,6 +458,12 @@ export class SystemService {
    * projects, sprints, epics, and settings.
    */
   async resetToFactorySeed(adminUserId?: string) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException(
+        'Factory database reset is disabled in production environments to protect operational data.',
+      );
+    }
+
     const adminPasswordHash = await bcrypt.hash('admin123', 10);
     const userPasswordHash = await bcrypt.hash('support123', 10);
 

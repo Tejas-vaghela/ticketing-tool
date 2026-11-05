@@ -1,6 +1,6 @@
 // jest globals
 import { IssueStatus } from '@prisma/client';
-import { normalizeIssueStatus } from '../../backend/src/issues/status-mapper';
+import { normalizeIssueStatus } from './status-mapper.js';
 
 describe('status-mapper', () => {
   it('should correctly map all standard Kanban board column labels to Prisma IssueStatus enums', () => {
