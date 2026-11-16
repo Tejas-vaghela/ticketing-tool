@@ -375,7 +375,7 @@ export class AttachmentsService {
       throw new NotFoundException(`Attachment with identifier ${id} not found.`);
     }
 
-    const filePath = this.storageService.getFilePath(attachment.id, attachment.filename);
+    const filePath = await this.storageService.ensureFileLocally(attachment.id, attachment.filename);
     if (!this.storageService.fileExists(filePath)) {
       this.logger.error(`Physical file missing on server storage for attachment ${id}: ${filePath}`);
       throw new NotFoundException(

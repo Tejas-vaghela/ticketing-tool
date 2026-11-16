@@ -18,6 +18,7 @@
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "load:test": "powershell -ExecutionPolicy Bypass -File ../load-test/run-load-tests.ps1 -Target auth",
     "load:stress": "powershell -ExecutionPolicy Bypass -File ../load-test/run-load-tests.ps1 -Target stress",
     "load:all": "powershell -ExecutionPolicy Bypass -File ../load-test/run-load-tests.ps1 -Target all"
@@ -30,6 +31,7 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.4.15",
     "@prisma/client": "^6.19.3",
+    "@vercel/blob": "^2.9.0",
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",

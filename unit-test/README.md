@@ -50,7 +50,6 @@ cd backend
 npm test
 ```
 *23 test suites, 184 tests — 100% Passed.*
-
 ### Frontend Tests (Vitest)
 ```bash
 cd frontend
