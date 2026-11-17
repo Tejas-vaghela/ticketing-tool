@@ -19,6 +19,8 @@ describe('IssuesController', () => {
     updateStatus: vi.fn(),
     escalate: vi.fn(),
     remove: vi.fn(),
+    listComments: vi.fn(),
+    addComment: vi.fn(),
   };
 
 
@@ -106,5 +108,24 @@ describe('IssuesController', () => {
     const result = await controller.remove('INB-1001');
     expect(result).toEqual(expected);
     expect(mockIssuesService.remove).toHaveBeenCalledWith('INB-1001');
+  });
+
+  it('should list comments for an issue', async () => {
+    const expected = [{ id: 'comm-1', content: 'Test comment' }];
+    mockIssuesService.listComments.mockResolvedValue(expected);
+
+    const result = await controller.listComments('INB-1001');
+    expect(result).toEqual(expected);
+    expect(mockIssuesService.listComments).toHaveBeenCalledWith('INB-1001');
+  });
+
+  it('should add a comment to an issue', async () => {
+    const commentDto = { content: 'Investigating issue' };
+    const expected = { id: 'comm-1', content: 'Investigating issue', authorId: 'user-1' };
+    mockIssuesService.addComment.mockResolvedValue(expected);
+
+    const result = await controller.addComment('INB-1001', commentDto as any, { id: 'user-1' });
+    expect(result).toEqual(expected);
+    expect(mockIssuesService.addComment).toHaveBeenCalledWith('INB-1001', commentDto, 'user-1');
   });
 });

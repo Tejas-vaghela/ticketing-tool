@@ -7,6 +7,7 @@ import { BadRequestException } from '@nestjs/common';
 describe('IssuesService', () => {
   let service: IssuesService;
   let prisma: any;
+  let notificationsService: any;
 
   beforeEach(() => {
     prisma = {
@@ -32,13 +33,23 @@ describe('IssuesService', () => {
       epic: {
         findUnique: vi.fn(),
       },
+      comment: {
+        create: vi.fn(),
+        findMany: vi.fn(),
+      },
       activityEvent: {
         create: vi.fn(),
       },
       $transaction: vi.fn(async (cb: (tx: any) => Promise<any>) => cb(prisma)),
     };
 
-    service = new IssuesService(prisma as unknown as PrismaService);
+    notificationsService = {
+      createNotification: vi.fn().mockResolvedValue({ id: 'notif-1' }),
+      getUserNotifications: vi.fn().mockResolvedValue([]),
+      getUnreadCount: vi.fn().mockResolvedValue(0),
+    };
+
+    service = new IssuesService(prisma as unknown as PrismaService, notificationsService as any);
   });
 
   describe('updateStatus', () => {

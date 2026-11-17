@@ -5,12 +5,17 @@ import { UpdateIssueDto } from './dto/update-issue.dto.js';
 import { EscalateIssueDto } from './dto/escalate-issue.dto.js';
 import { UpdateStatusDto } from './dto/update-status.dto.js';
 import { QueryIssuesDto } from './dto/query-issues.dto.js';
-import { SupportLevel, Priority, Prisma, IssueStatus } from '@prisma/client';
+import { CreateCommentDto } from './dto/create-comment.dto.js';
+import { SupportLevel, Priority, Prisma, IssueStatus, NotificationType } from '@prisma/client';
 import { normalizeIssueStatus } from './status-mapper.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 @Injectable()
 export class IssuesService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) { }
 
   /**
    * Helper: Calculate SLA thresholds based on issue priority.
@@ -84,7 +89,7 @@ export class IssuesService {
       if (epicExists) epicId = dto.epicId;
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const createdIssue = await this.prisma.$transaction(async (tx) => {
       const issue = await tx.issue.create({
         data: {
           id: nextId,
@@ -126,6 +131,19 @@ export class IssuesService {
 
       return issue;
     });
+
+    if (createdIssue.assigneeId) {
+      this.notificationsService.createNotification({
+        userId: createdIssue.assigneeId,
+        actorId: reporterId,
+        title: 'New Ticket Assigned',
+        message: `You have been assigned ${createdIssue.id} "${createdIssue.title}".`,
+        type: NotificationType.assignment,
+        issueId: createdIssue.id,
+      }).catch(() => {});
+    }
+
+    return createdIssue;
   }
 
   /**
@@ -363,8 +381,8 @@ export class IssuesService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.issue.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedRecord = await tx.issue.update({
         where: { id },
         data,
         include: {
@@ -387,8 +405,21 @@ export class IssuesService {
         },
       });
 
-      return updated;
+      return updatedRecord;
     });
+
+    if (dto.assigneeId && dto.assigneeId !== 'unassigned' && dto.assigneeId !== issue.assigneeId) {
+      this.notificationsService.createNotification({
+        userId: dto.assigneeId,
+        actorId: userId,
+        title: 'Ticket Reassigned',
+        message: `You have been assigned ${updated.id} "${updated.title}".`,
+        type: NotificationType.assignment,
+        issueId: updated.id,
+      }).catch(() => {});
+    }
+
+    return updated;
   }
 
   /**
@@ -441,8 +472,8 @@ export class IssuesService {
       if (anyUser) validUserId = anyUser.id;
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.issue.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedIssue = await tx.issue.update({
         where: { id },
         data: updates,
         include: {
@@ -472,8 +503,27 @@ export class IssuesService {
         }
       }
 
-      return updated;
+      return updatedIssue;
     });
+
+    // Notify assignee or reporter about status change
+    const statusNotifyTarget = updated.assigneeId || updated.reporterId;
+    if (statusNotifyTarget && statusNotifyTarget !== validUserId) {
+      try {
+        await this.notificationsService.createNotification({
+          userId: statusNotifyTarget,
+          actorId: validUserId || undefined,
+          type: NotificationType.status,
+          title: `Status Updated: ${updated.id}`,
+          message: `Ticket status changed from ${issue.status} to ${targetStatus}`,
+          issueId: updated.id,
+        });
+      } catch (notifErr) {
+        console.warn('Failed to send status notification:', notifErr);
+      }
+    }
+
+    return updated;
   }
 
   /**
@@ -500,7 +550,7 @@ export class IssuesService {
       if (!userExists) assignedToUserId = null;
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Create audit escalation record
       const escalationRecord = await tx.escalationRecord.create({
         data: {
@@ -553,6 +603,105 @@ export class IssuesService {
       });
 
       return { ...updated, escalationRecord };
+    });
+
+    // Notify assigned engineer or previous assignee
+    const escalateTarget = assignedToUserId || issue.assigneeId || issue.reporterId;
+    if (escalateTarget && escalateTarget !== userId) {
+      try {
+        await this.notificationsService.createNotification({
+          userId: escalateTarget,
+          actorId: userId,
+          type: NotificationType.escalation,
+          title: `Ticket Escalated: ${result.id}`,
+          message: `Escalated to ${dto.toLevel}: ${dto.reason}`,
+          issueId: result.id,
+        });
+      } catch (notifErr) {
+        console.warn('Failed to send escalation notification:', notifErr);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Add a comment to an issue and dispatch a notification.
+   */
+  async addComment(issueId: string, dto: CreateCommentDto, authorId: string) {
+    const issue = await this.findOne(issueId);
+
+    const comment = await this.prisma.comment.create({
+      data: {
+        issueId,
+        authorId,
+        content: dto.content,
+        type: dto.type || 'public',
+      },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+
+    try {
+      await this.prisma.activityEvent.create({
+        data: {
+          issueId,
+          userId: authorId,
+          action: 'commented',
+          details: `Added a comment on ${issueId}`,
+        },
+      });
+    } catch {
+      // Gracefully ignore activity event failure
+    }
+
+    // Notify issue assignee or reporter
+    const notifyTarget = issue.assigneeId || issue.reporterId;
+    if (notifyTarget && notifyTarget !== authorId) {
+      try {
+        const authorName = (comment as any).author?.name || 'Someone';
+        await this.notificationsService.createNotification({
+          userId: notifyTarget,
+          actorId: authorId,
+          type: NotificationType.comment,
+          title: `New Comment on ${issue.id}`,
+          message: `${authorName} commented: ${dto.content.slice(0, 100)}`,
+          issueId: issue.id,
+        });
+      } catch (notifErr) {
+        console.warn('Failed to send comment notification:', notifErr);
+      }
+    }
+
+    return comment;
+  }
+
+  /**
+   * List all comments for an issue.
+   */
+  async listComments(issueId: string) {
+    await this.findOne(issueId);
+    return this.prisma.comment.findMany({
+      where: { issueId },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
     });
   }
 

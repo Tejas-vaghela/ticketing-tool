@@ -17,6 +17,7 @@ import { UpdateIssueDto } from './dto/update-issue.dto.js';
 import { EscalateIssueDto } from './dto/escalate-issue.dto.js';
 import { UpdateStatusDto } from './dto/update-status.dto.js';
 import { QueryIssuesDto } from './dto/query-issues.dto.js';
+import { CreateCommentDto } from './dto/create-comment.dto.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
@@ -136,6 +137,30 @@ export class IssuesController {
   ) {
     const userId = user.id || user.sub;
     return this.issuesService.escalate(id, dto, userId);
+  }
+
+  /**
+   * GET /api/issues/:id/comments
+   * Retrieve comments for a specific issue.
+   */
+  @Get(':id/comments')
+  async listComments(@Param('id') id: string) {
+    return this.issuesService.listComments(id);
+  }
+
+  /**
+   * POST /api/issues/:id/comments
+   * Add a new comment to an issue and notify participants.
+   */
+  @Post(':id/comments')
+  @HttpCode(HttpStatus.CREATED)
+  async addComment(
+    @Param('id') id: string,
+    @Body() dto: CreateCommentDto,
+    @CurrentUser() user: any,
+  ) {
+    const userId = user.id || user.sub;
+    return this.issuesService.addComment(id, dto, userId);
   }
 
   /**
