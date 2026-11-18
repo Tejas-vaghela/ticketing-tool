@@ -87,18 +87,27 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('should reject deactivated offline user with UnauthorizedException', async () => {
+    it('should allow offline user to log in and transition presence to Active', async () => {
       const hashedPassword = await bcrypt.hash('secret123', 10);
       mockPrisma.user.findFirst.mockResolvedValue({
-        id: 'user-1',
-        email: 'tejas@inbox.io',
+        id: 'user-8',
+        email: 'vikram.r@inbox.GoldMine.io',
         password: hashedPassword,
+        role: UserRole.Project_Manager,
         status: UserStatus.Offline,
       });
+      mockPrisma.user.update.mockResolvedValue({
+        id: 'user-8',
+        status: UserStatus.Active,
+      });
 
-      await expect(
-        service.login({ emailOrId: 'tejas@inbox.io', password: 'secret123' }),
-      ).rejects.toThrow(UnauthorizedException);
+      const res = await service.login({ emailOrId: 'vikram.r@inbox.GoldMine.io', password: 'secret123' });
+      expect(res).toBeDefined();
+      expect(res.user.status).toBe(UserStatus.Active);
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-8' },
+        data: { status: UserStatus.Active },
+      });
     });
 
     it('should fall back to known seed user when database returns no user', async () => {
@@ -243,3 +252,4 @@ describe('AuthService', () => {
     });
   });
 });
+

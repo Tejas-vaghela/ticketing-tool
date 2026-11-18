@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateIssueDto } from './dto/create-issue.dto.js';
 import { UpdateIssueDto } from './dto/update-issue.dto.js';
@@ -703,6 +703,59 @@ export class IssuesService {
       },
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  /**
+   * Edit an existing comment.
+   */
+  async editComment(commentId: string, content: string, userId: string, userRole?: string) {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+    });
+    if (!comment) {
+      throw new NotFoundException(`Comment with ID '${commentId}' not found.`);
+    }
+
+    if (comment.authorId !== userId && userRole !== 'Admin' && userRole !== 'Project_Manager') {
+      throw new ForbiddenException('You do not have permission to edit this comment.');
+    }
+
+    return this.prisma.comment.update({
+      where: { id: commentId },
+      data: { content },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Delete an existing comment.
+   */
+  async deleteComment(commentId: string, userId: string, userRole?: string) {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+    });
+    if (!comment) {
+      throw new NotFoundException(`Comment with ID '${commentId}' not found.`);
+    }
+
+    if (comment.authorId !== userId && userRole !== 'Admin' && userRole !== 'Project_Manager') {
+      throw new ForbiddenException('You do not have permission to delete this comment.');
+    }
+
+    await this.prisma.comment.delete({
+      where: { id: commentId },
+    });
+
+    return { success: true, deletedId: commentId, message: 'Comment successfully deleted.' };
   }
 
   /**

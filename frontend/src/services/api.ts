@@ -184,11 +184,11 @@ export function normalizeBackendUser(u: any): User {
 }
 
 // ---------------------------------------------------------------------------
-// Users API — wraps all /api/users endpoints
+// Users API - wraps all /api/users endpoints
 // ---------------------------------------------------------------------------
 
 export const usersApi = {
-  /** GET /api/users — fetch all users (up to 200 per page for the UI list) */
+  /** GET /api/users - fetch all users (up to 200 per page for the UI list) */
   listUsers: async (): Promise<User[]> => {
     const response = await apiRequest<PaginatedUsersResponse>('/users?limit=200');
     return response.data.map(normalizeBackendUser);
@@ -200,7 +200,7 @@ export const usersApi = {
     return normalizeBackendUser(u);
   },
 
-  /** POST /api/users — Admin only */
+  /** POST /api/users - Admin only */
   createUser: async (data: Omit<User, 'id'> & { password: string }): Promise<User> => {
     const payload = {
       name: data.name,
@@ -220,7 +220,7 @@ export const usersApi = {
     return normalizeBackendUser(u);
   },
 
-  /** PATCH /api/users/:id — Admin / PM / self */
+  /** PATCH /api/users/:id - Admin / PM / self */
   updateUser: async (id: string, data: Partial<User>): Promise<User> => {
     const payload: Record<string, any> = {};
     if (data.name !== undefined) payload.name = data.name;
@@ -238,7 +238,7 @@ export const usersApi = {
     return normalizeBackendUser(u);
   },
 
-  /** DELETE /api/users/:id — Admin only */
+  /** DELETE /api/users/:id - Admin only */
   deleteUser: async (id: string): Promise<{ message: string }> => {
     return apiRequest<{ message: string }>(`/users/${id}`, {
       method: 'DELETE',
@@ -307,7 +307,7 @@ export function normalizeBackendProject(p: any): Project {
 }
 
 export const projectsApi = {
-  /** GET /api/projects — List all projects */
+  /** GET /api/projects - List all projects */
   listProjects: async (params?: { q?: string; status?: string; category?: string }): Promise<Project[]> => {
     const query = new URLSearchParams();
     if (params?.q) query.append('q', params.q);
@@ -320,12 +320,12 @@ export const projectsApi = {
     return res.map(normalizeBackendProject);
   },
 
-  /** GET /api/projects/:idOrKey — Retrieve project cockpit by CUID or Key */
+  /** GET /api/projects/:idOrKey - Retrieve project cockpit by CUID or Key */
   getProject: async (idOrKey: string): Promise<any> => {
     return apiRequest<any>(`/projects/${idOrKey}`);
   },
 
-  /** POST /api/projects — Admin, Project_Manager */
+  /** POST /api/projects - Admin, Project_Manager */
   createProject: async (data: Omit<Project, 'id' | 'createdDate'>): Promise<Project> => {
     const payload = {
       key: data.key.trim().toUpperCase(),
@@ -343,7 +343,7 @@ export const projectsApi = {
     return normalizeBackendProject(res);
   },
 
-  /** PATCH /api/projects/:id — Admin, Project_Manager */
+  /** PATCH /api/projects/:id - Admin, Project_Manager */
   updateProject: async (id: string, data: Partial<Project>): Promise<Project> => {
     const payload: Record<string, any> = {};
     if (data.name !== undefined) payload.name = data.name.trim();
@@ -361,7 +361,7 @@ export const projectsApi = {
     return normalizeBackendProject(res);
   },
 
-  /** DELETE /api/projects/:id — Admin only */
+  /** DELETE /api/projects/:id - Admin only */
   deleteProject: async (id: string): Promise<{ message: string }> => {
     return apiRequest<{ message: string }>(`/projects/${id}`, {
       method: 'DELETE',
@@ -480,31 +480,31 @@ export const attachmentsApi = {
 // ============================================================================
 
 export const notificationsApi = {
-  /** GET /api/notifications — List notifications for authenticated user */
+  /** GET /api/notifications - List notifications for authenticated user */
   getNotifications: async (): Promise<Notification[]> => {
     return apiRequest<Notification[]>('/notifications');
   },
 
-  /** GET /api/notifications/unread-count — Get count of unread notifications */
+  /** GET /api/notifications/unread-count - Get count of unread notifications */
   getUnreadCount: async (): Promise<{ unreadCount: number }> => {
     return apiRequest<{ unreadCount: number }>('/notifications/unread-count');
   },
 
-  /** PATCH /api/notifications/:id/read — Mark single notification as read */
+  /** PATCH /api/notifications/:id/read - Mark single notification as read */
   markAsRead: async (id: string): Promise<Notification> => {
     return apiRequest<Notification>(`/notifications/${encodeURIComponent(id)}/read`, {
       method: 'PATCH',
     });
   },
 
-  /** POST /api/notifications/mark-all-read — Mark all notifications as read */
+  /** POST /api/notifications/mark-all-read - Mark all notifications as read */
   markAllAsRead: async (): Promise<{ success: boolean; count: number }> => {
     return apiRequest<{ success: boolean; count: number }>('/notifications/mark-all-read', {
       method: 'POST',
     });
   },
 
-  /** POST /api/notifications/system-alert — Dispatch system-wide alert (Admin only) */
+  /** POST /api/notifications/system-alert - Dispatch system-wide alert (Admin only) */
   sendSystemAlert: async (data: {
     title: string;
     message: string;
@@ -527,7 +527,7 @@ export const notificationsApi = {
 // ============================================================================
 
 export const issuesApi = {
-  /** GET /api/issues — List issues with optional filters */
+  /** GET /api/issues - List issues with optional filters */
   listIssues: async (params?: {
     projectId?: string;
     status?: string;
@@ -543,12 +543,12 @@ export const issuesApi = {
     return apiRequest<any[]>(`/issues${qs}`);
   },
 
-  /** GET /api/issues/:id — Retrieve single issue by ID */
+  /** GET /api/issues/:id - Retrieve single issue by ID */
   getIssue: async (id: string): Promise<any> => {
     return apiRequest<any>(`/issues/${encodeURIComponent(id)}`);
   },
 
-  /** POST /api/issues — Create new issue (triggers assignment notification) */
+  /** POST /api/issues - Create new issue (triggers assignment notification) */
   createIssue: async (data: any): Promise<any> => {
     return apiRequest<any>('/issues', {
       method: 'POST',
@@ -556,7 +556,7 @@ export const issuesApi = {
     });
   },
 
-  /** PATCH /api/issues/:id — Update issue details/assignee (triggers assignment notification) */
+  /** PATCH /api/issues/:id - Update issue details/assignee (triggers assignment notification) */
   updateIssue: async (id: string, data: any): Promise<any> => {
     return apiRequest<any>(`/issues/${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -564,7 +564,7 @@ export const issuesApi = {
     });
   },
 
-  /** PATCH /api/issues/:id/status — Update issue status (triggers status notification) */
+  /** PATCH /api/issues/:id/status - Update issue status (triggers status notification) */
   updateStatus: async (id: string, status: string): Promise<any> => {
     return apiRequest<any>(`/issues/${encodeURIComponent(id)}/status`, {
       method: 'PATCH',
@@ -572,7 +572,7 @@ export const issuesApi = {
     });
   },
 
-  /** POST /api/issues/:id/escalate — Escalate issue (triggers escalation notification) */
+  /** POST /api/issues/:id/escalate - Escalate issue (triggers escalation notification) */
   escalateIssue: async (
     id: string,
     data: { toLevel: string; reason: string; assignedToUserId?: string },
@@ -583,7 +583,7 @@ export const issuesApi = {
     });
   },
 
-  /** POST /api/issues/:id/comments — Add comment (triggers comment notification) */
+  /** POST /api/issues/:id/comments - Add comment (triggers comment notification) */
   addComment: async (
     id: string,
     data: { content: string; type?: 'public' | 'internal' },
@@ -594,7 +594,35 @@ export const issuesApi = {
     });
   },
 
-  /** GET /api/issues/:id/comments — Get comments for issue */
+  /** PATCH /api/issues/:id/comments/:commentId */
+  editComment: async (id: string, commentId: string, content: string): Promise<any> => {
+    return apiRequest<any>(
+      `/issues/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ content }),
+      },
+    );
+  },
+
+  /** DELETE /api/issues/:id/comments/:commentId */
+  deleteComment: async (id: string, commentId: string): Promise<any> => {
+    return apiRequest<any>(
+      `/issues/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
+      {
+        method: 'DELETE',
+      },
+    );
+  },
+
+  /** DELETE /api/issues/:id */
+  deleteIssue: async (id: string): Promise<any> => {
+    return apiRequest<any>(`/issues/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /** GET /api/issues/:id/comments - Get comments for issue */
   listComments: async (id: string): Promise<any[]> => {
     return apiRequest<any[]>(`/issues/${encodeURIComponent(id)}/comments`);
   },
@@ -609,7 +637,7 @@ export const issuesApi = {
 // ============================================================================
 
 export const epicsApi = {
-  /** GET /api/epics — Retrieve list of epics */
+  /** GET /api/epics - Retrieve list of epics */
   listEpics: async (params?: { projectId?: string; status?: string; search?: string }): Promise<Epic[]> => {
     const query = new URLSearchParams();
     if (params?.projectId) query.append('projectId', params.projectId);
@@ -619,12 +647,12 @@ export const epicsApi = {
     return apiRequest<Epic[]>(`/epics${qs}`);
   },
 
-  /** GET /api/epics/:id — Retrieve single epic by ID */
+  /** GET /api/epics/:id - Retrieve single epic by ID */
   getEpic: async (id: string): Promise<Epic> => {
     return apiRequest<Epic>(`/epics/${encodeURIComponent(id)}`);
   },
 
-  /** POST /api/epics — Create new epic */
+  /** POST /api/epics - Create new epic */
   createEpic: async (data: Partial<Epic>): Promise<Epic> => {
     return apiRequest<Epic>('/epics', {
       method: 'POST',
@@ -632,7 +660,7 @@ export const epicsApi = {
     });
   },
 
-  /** PATCH /api/epics/:id — Update epic */
+  /** PATCH /api/epics/:id - Update epic */
   updateEpic: async (id: string, data: Partial<Epic>): Promise<Epic> => {
     return apiRequest<Epic>(`/epics/${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -640,7 +668,7 @@ export const epicsApi = {
     });
   },
 
-  /** DELETE /api/epics/:id — Delete epic */
+  /** DELETE /api/epics/:id - Delete epic */
   deleteEpic: async (id: string): Promise<{ success: boolean; message?: string }> => {
     return apiRequest<{ success: boolean; message?: string }>(`/epics/${encodeURIComponent(id)}`, {
       method: 'DELETE',
@@ -653,7 +681,7 @@ export const epicsApi = {
 // ============================================================================
 
 export const sprintsApi = {
-  /** GET /api/sprints — Retrieve sprints list */
+  /** GET /api/sprints - Retrieve sprints list */
   listSprints: async (params?: { projectId?: string; status?: string }): Promise<Sprint[]> => {
     const query = new URLSearchParams();
     if (params?.projectId) query.append('projectId', params.projectId);
@@ -662,12 +690,12 @@ export const sprintsApi = {
     return apiRequest<Sprint[]>(`/sprints${qs}`);
   },
 
-  /** GET /api/sprints/:id — Retrieve single sprint */
+  /** GET /api/sprints/:id - Retrieve single sprint */
   getSprint: async (id: string): Promise<Sprint> => {
     return apiRequest<Sprint>(`/sprints/${encodeURIComponent(id)}`);
   },
 
-  /** POST /api/sprints — Create sprint */
+  /** POST /api/sprints - Create sprint */
   createSprint: async (data: Partial<Sprint>): Promise<Sprint> => {
     return apiRequest<Sprint>('/sprints', {
       method: 'POST',
@@ -675,7 +703,7 @@ export const sprintsApi = {
     });
   },
 
-  /** PATCH /api/sprints/:id — Update sprint */
+  /** PATCH /api/sprints/:id - Update sprint */
   updateSprint: async (id: string, data: Partial<Sprint>): Promise<Sprint> => {
     return apiRequest<Sprint>(`/sprints/${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -683,21 +711,22 @@ export const sprintsApi = {
     });
   },
 
-  /** POST /api/sprints/:id/start — Start sprint */
+  /** POST /api/sprints/:id/start - Start sprint */
   startSprint: async (id: string): Promise<Sprint> => {
     return apiRequest<Sprint>(`/sprints/${encodeURIComponent(id)}/start`, {
       method: 'POST',
     });
   },
 
-  /** POST /api/sprints/:id/complete — Complete sprint */
-  completeSprint: async (id: string): Promise<Sprint> => {
+  /** POST /api/sprints/:id/complete - Complete sprint */
+  completeSprint: async (id: string, targetSprintId?: string): Promise<Sprint> => {
     return apiRequest<Sprint>(`/sprints/${encodeURIComponent(id)}/complete`, {
       method: 'POST',
+      body: JSON.stringify(targetSprintId ? { targetSprintId } : {}),
     });
   },
 
-  /** DELETE /api/sprints/:id — Delete sprint */
+  /** DELETE /api/sprints/:id - Delete sprint */
   deleteSprint: async (id: string): Promise<{ success: boolean; message?: string }> => {
     return apiRequest<{ success: boolean; message?: string }>(`/sprints/${encodeURIComponent(id)}`, {
       method: 'DELETE',
@@ -727,7 +756,7 @@ export interface SearchResponse {
 }
 
 export const searchApi = {
-  /** GET /api/search — Global instant search across tickets, projects, epics, sprints, users */
+  /** GET /api/search - Global instant search across tickets, projects, epics, sprints, users */
   search: async (params: {
     q: string;
     type?: string;
@@ -757,7 +786,7 @@ export interface ActivityFeedResponse {
 }
 
 export const activityApi = {
-  /** GET /api/activity — Workspace activity feed */
+  /** GET /api/activity - Workspace activity feed */
   getFeed: async (params?: {
     limit?: number;
     cursor?: string;
@@ -775,12 +804,12 @@ export const activityApi = {
     return apiRequest<ActivityFeedResponse>(`/activity${qs}`);
   },
 
-  /** GET /api/activity/issues/:issueId — Ticket activity history */
+  /** GET /api/activity/issues/:issueId - Ticket activity history */
   getIssueActivity: async (issueId: string): Promise<ActivityEvent[]> => {
     return apiRequest<ActivityEvent[]>(`/activity/issues/${encodeURIComponent(issueId)}`);
   },
 
-  /** GET /api/activity/projects/:projectId — Project activity history */
+  /** GET /api/activity/projects/:projectId - Project activity history */
   getProjectActivity: async (projectId: string): Promise<ActivityEvent[]> => {
     return apiRequest<ActivityEvent[]>(`/activity/projects/${encodeURIComponent(projectId)}`);
   },
@@ -791,12 +820,12 @@ export const activityApi = {
 // ============================================================================
 
 export const savedFiltersApi = {
-  /** GET /api/saved-filters — List saved filters */
+  /** GET /api/saved-filters - List saved filters */
   listFilters: async (): Promise<SavedFilter[]> => {
     return apiRequest<SavedFilter[]>('/saved-filters');
   },
 
-  /** POST /api/saved-filters — Create a new saved filter */
+  /** POST /api/saved-filters - Create a new saved filter */
   createFilter: async (data: { name: string; filterConfig: Record<string, any>; isGlobal?: boolean }): Promise<SavedFilter> => {
     return apiRequest<SavedFilter>('/saved-filters', {
       method: 'POST',
@@ -804,7 +833,7 @@ export const savedFiltersApi = {
     });
   },
 
-  /** PATCH /api/saved-filters/:id — Update an existing saved filter */
+  /** PATCH /api/saved-filters/:id - Update an existing saved filter */
   updateFilter: async (id: string, data: Partial<SavedFilter>): Promise<SavedFilter> => {
     return apiRequest<SavedFilter>(`/saved-filters/${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -812,7 +841,7 @@ export const savedFiltersApi = {
     });
   },
 
-  /** DELETE /api/saved-filters/:id — Delete a saved filter */
+  /** DELETE /api/saved-filters/:id - Delete a saved filter */
   deleteFilter: async (id: string): Promise<{ success: boolean; message?: string }> => {
     return apiRequest<{ success: boolean; message?: string }>(`/saved-filters/${encodeURIComponent(id)}`, {
       method: 'DELETE',
@@ -840,22 +869,22 @@ export interface SystemInfo {
 }
 
 export const systemApi = {
-  /** GET /api/system/health — Public health & database connectivity check */
+  /** GET /api/system/health - Public health & database connectivity check */
   getHealth: async (): Promise<SystemHealth> => {
     return apiRequest<SystemHealth>('/system/health');
   },
 
-  /** GET /api/system/info — Runtime metadata and telemetry */
+  /** GET /api/system/info - Runtime metadata and telemetry */
   getInfo: async (): Promise<SystemInfo> => {
     return apiRequest<SystemInfo>('/system/info');
   },
 
-  /** GET /api/system/export — Full JSON database snapshot (Admin only) */
+  /** GET /api/system/export - Full JSON database snapshot (Admin only) */
   exportDatabase: async (): Promise<any> => {
     return apiRequest<any>('/system/export');
   },
 
-  /** POST /api/system/import — Restore database from backup JSON (Admin only) */
+  /** POST /api/system/import - Restore database from backup JSON (Admin only) */
   importDatabase: async (data: any): Promise<{ success: boolean; message: string; summary?: any }> => {
     return apiRequest<{ success: boolean; message: string; summary?: any }>('/system/import', {
       method: 'POST',
@@ -863,7 +892,7 @@ export const systemApi = {
     });
   },
 
-  /** POST /api/system/reset — Reset database to initial factory state (Admin only) */
+  /** POST /api/system/reset - Reset database to initial factory state (Admin only) */
   resetFactory: async (): Promise<{ success: boolean; message: string }> => {
     return apiRequest<{ success: boolean; message: string }>('/system/reset', {
       method: 'POST',
@@ -876,12 +905,12 @@ export const systemApi = {
 // ============================================================================
 
 export const settingsApi = {
-  /** GET /api/settings — Retrieve workspace settings */
+  /** GET /api/settings - Retrieve workspace settings */
   getSettings: async (): Promise<Settings> => {
     return apiRequest<Settings>('/settings');
   },
 
-  /** PATCH /api/settings — Update workspace settings (Admin only) */
+  /** PATCH /api/settings - Update workspace settings (Admin only) */
   updateSettings: async (data: Partial<Settings>): Promise<Settings> => {
     return apiRequest<Settings>('/settings', {
       method: 'PATCH',
@@ -914,13 +943,13 @@ export interface SlaMetrics extends ReportsSummary {
 }
 
 export const reportsApi = {
-  /** GET /api/reports/summary — Aggregate metrics across issues & projects */
+  /** GET /api/reports/summary - Aggregate metrics across issues & projects */
   getSummary: async (projectId?: string): Promise<ReportsSummary> => {
     const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
     return apiRequest<ReportsSummary>(`/reports/summary${qs}`);
   },
 
-  /** GET /api/reports/sla — Detailed SLA compliance and duration metrics */
+  /** GET /api/reports/sla - Detailed SLA compliance and duration metrics */
   getSlaMetrics: async (projectId?: string): Promise<SlaMetrics> => {
     const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
     return apiRequest<SlaMetrics>(`/reports/sla${qs}`);

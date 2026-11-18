@@ -188,11 +188,17 @@ export class AuthService {
         }
 
         if (passwordMatched) {
-          // Check account status
+          // If user was offline, transition presence status to Active upon successful login
           if (dbUser.status === UserStatus.Offline) {
-            throw new UnauthorizedException(
-              'Your account has been deactivated. Please contact your administrator.',
-            );
+            try {
+              await this.prisma.user.update({
+                where: { id: dbUser.id },
+                data: { status: UserStatus.Active },
+              });
+              dbUser.status = UserStatus.Active;
+            } catch {
+              // Gracefully continue even if presence update fails
+            }
           }
           const { password, ...safe } = dbUser;
           userRecord = safe;

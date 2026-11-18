@@ -99,14 +99,14 @@ interface AppContextType {
   deleteProject: (id: string) => Promise<void>;
 
   // Sprints
-  createSprint: (data: Omit<Sprint, 'id'>) => Sprint;
+  createSprint: (data: Omit<Sprint, 'id'>) => Promise<Sprint>;
   updateSprint: (id: string, data: Partial<Sprint>) => void;
   startSprint: (id: string) => void;
   completeSprint: (id: string, targetSprintId?: string) => void;
   deleteSprint: (id: string) => void;
 
   // Epics
-  createEpic: (data: Omit<Epic, 'id'>) => Epic;
+  createEpic: (data: Omit<Epic, 'id'>) => Promise<Epic>;
   updateEpic: (id: string, data: Partial<Epic>) => void;
   deleteEpic: (id: string) => void;
 
@@ -639,7 +639,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return next;
     });
 
-    // Dispatch status change or reassignment to backend to create persistent notifications
+    // Dispatch status change to dedicated endpoint
     if (updates.status) {
       issuesApi
         .updateStatus(id, updates.status)
@@ -648,12 +648,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           console.warn('[AppContext] Backend updateStatus error:', err);
         });
     }
-    if (updates.assigneeId !== undefined) {
+
+    // Dispatch all ticket attributes to backend to ensure full PostgreSQL persistence
+    const backendPayload: any = {};
+    if (updates.title !== undefined) backendPayload.title = updates.title;
+    if (updates.description !== undefined) backendPayload.description = updates.description;
+    if (updates.type !== undefined) backendPayload.type = updates.type;
+    if (updates.priority !== undefined) backendPayload.priority = updates.priority;
+    if (updates.supportLevel !== undefined) backendPayload.supportLevel = updates.supportLevel;
+    if (updates.assigneeId !== undefined) backendPayload.assigneeId = updates.assigneeId;
+    if (updates.sprintId !== undefined) backendPayload.sprintId = updates.sprintId;
+    if (updates.epicId !== undefined) backendPayload.epicId = updates.epicId;
+    if (updates.labels !== undefined) backendPayload.labels = updates.labels;
+    if (updates.dueDate !== undefined) backendPayload.dueDate = updates.dueDate;
+    if (updates.storyPoints !== undefined) backendPayload.storyPoints = updates.storyPoints;
+    if (updates.estimatedTime !== undefined) backendPayload.estimatedTime = updates.estimatedTime;
+    if (updates.remainingTime !== undefined) backendPayload.remainingTime = updates.remainingTime;
+
+    if (Object.keys(backendPayload).length > 0) {
       issuesApi
-        .updateIssue(id, { assigneeId: updates.assigneeId })
+        .updateIssue(id, backendPayload)
         .then(() => refreshNotifications())
         .catch(err => {
-          console.warn('[AppContext] Backend updateIssue assignee error:', err);
+          console.warn('[AppContext] Backend updateIssue error:', err);
         });
     }
 
@@ -676,6 +693,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return next;
     });
+
+    // Call backend API to delete issue from PostgreSQL
+    issuesApi
+      .deleteIssue(id)
+      .catch(err => {
+        console.warn('[AppContext] Backend deleteIssue error:', err);
+      });
+
     addToast('Issue Deleted', `${id} was removed.`, 'warning');
   }, [currentUser, logActivity, addToast]);
 
@@ -813,20 +838,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [currentUser, issues, logActivity, updateIssue, addToast, refreshNotifications]);
 
   const editComment = useCallback((commentId: string, content: string) => {
+    let targetIssueId = '';
     setComments(prev => {
+      const match = prev.find(c => c.id === commentId);
+      if (match) targetIssueId = match.issueId;
       const next = prev.map(c => c.id === commentId ? { ...c, content, updatedAt: new Date().toISOString() } : c);
       storage.saveComments(next);
       return next;
     });
+
+    if (targetIssueId) {
+      issuesApi.editComment(targetIssueId, commentId, content).catch(err => {
+        console.warn('[AppContext] Backend editComment error:', err);
+      });
+    }
     addToast('Comment Updated', '', 'info');
   }, [addToast]);
 
   const deleteComment = useCallback((commentId: string) => {
+    let targetIssueId = '';
     setComments(prev => {
+      const match = prev.find(c => c.id === commentId);
+      if (match) targetIssueId = match.issueId;
       const next = prev.filter(c => c.id !== commentId);
       storage.saveComments(next);
       return next;
     });
+
+    if (targetIssueId) {
+      issuesApi.deleteComment(targetIssueId, commentId).catch(err => {
+        console.warn('[AppContext] Backend deleteComment error:', err);
+      });
+    }
     addToast('Comment Deleted', '', 'warning');
   }, [addToast]);
 
@@ -1057,7 +1100,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     try {
-      await sprintsApi.completeSprint(id);
+      await sprintsApi.completeSprint(id, targetSprintId);
     } catch (err) {
       console.warn('[AppContext] Backend completeSprint error, persisted locally:', err);
     }

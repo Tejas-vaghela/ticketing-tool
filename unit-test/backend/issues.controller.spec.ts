@@ -21,6 +21,8 @@ describe('IssuesController', () => {
     remove: vi.fn(),
     listComments: vi.fn(),
     addComment: vi.fn(),
+    editComment: vi.fn(),
+    deleteComment: vi.fn(),
   };
 
 

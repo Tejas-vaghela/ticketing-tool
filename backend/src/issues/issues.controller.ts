@@ -164,6 +164,35 @@ export class IssuesController {
   }
 
   /**
+   * PATCH /api/issues/:id/comments/:commentId
+   * Update content of an existing comment.
+   */
+  @Patch(':id/comments/:commentId')
+  @HttpCode(HttpStatus.OK)
+  async editComment(
+    @Param('commentId') commentId: string,
+    @Body() dto: { content: string },
+    @CurrentUser() user: any,
+  ) {
+    const userId = user.id || user.sub;
+    return this.issuesService.editComment(commentId, dto.content, userId, user.role);
+  }
+
+  /**
+   * DELETE /api/issues/:id/comments/:commentId
+   * Remove a comment.
+   */
+  @Delete(':id/comments/:commentId')
+  @HttpCode(HttpStatus.OK)
+  async deleteComment(
+    @Param('commentId') commentId: string,
+    @CurrentUser() user: any,
+  ) {
+    const userId = user.id || user.sub;
+    return this.issuesService.deleteComment(commentId, userId, user.role);
+  }
+
+  /**
    * DELETE /api/issues/:id
    * Remove issue permanently. Restricted strictly to Admin and Project Manager.
    */
