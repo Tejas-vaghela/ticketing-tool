@@ -99,14 +99,14 @@ interface AppContextType {
   deleteProject: (id: string) => Promise<void>;
 
   // Sprints
-  createSprint: (data: Omit<Sprint, 'id'>) => Promise<Sprint>;
+  createSprint: (data: Omit<Sprint, 'id'>) => Sprint;
   updateSprint: (id: string, data: Partial<Sprint>) => void;
   startSprint: (id: string) => void;
   completeSprint: (id: string, targetSprintId?: string) => void;
   deleteSprint: (id: string) => void;
 
   // Epics
-  createEpic: (data: Omit<Epic, 'id'>) => Promise<Epic>;
+  createEpic: (data: Omit<Epic, 'id'>) => Epic;
   updateEpic: (id: string, data: Partial<Epic>) => void;
   deleteEpic: (id: string) => void;
 

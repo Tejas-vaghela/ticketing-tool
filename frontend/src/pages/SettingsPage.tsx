@@ -17,7 +17,6 @@ import {
   AlertOctagon
 } from 'lucide-react';
 import { exportAllDataAsJSON, importDataFromJSON, resetAllDataToSeed } from '../services/storage';
-import { systemApi } from '../services/api';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 import { InboxLogo } from '../components/common/InboxLogo';
 
@@ -88,12 +87,7 @@ export const SettingsPage: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleResetData = async () => {
-    try {
-      await systemApi.resetFactory();
-    } catch (err) {
-      console.warn('[SettingsPage] Backend resetFactory failed, falling back to local reset:', err);
-    }
+  const handleResetData = () => {
     resetAllDataToSeed();
     window.location.reload();
   };
