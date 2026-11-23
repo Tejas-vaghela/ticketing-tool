@@ -910,11 +910,18 @@ export const settingsApi = {
     return apiRequest<Settings>('/settings');
   },
 
-  /** PATCH /api/settings - Update workspace settings (Admin only) */
+  /** PATCH /api/settings - Update workspace settings (Admin & Project Manager) */
   updateSettings: async (data: Partial<Settings>): Promise<Settings> => {
     return apiRequest<Settings>('/settings', {
       method: 'PATCH',
       body: JSON.stringify(data),
+    });
+  },
+
+  /** POST /api/settings/reset - Reset workspace settings to defaults */
+  resetSettings: async (): Promise<Settings> => {
+    return apiRequest<Settings>('/settings/reset', {
+      method: 'POST',
     });
   },
 };

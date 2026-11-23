@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Sliders, 
@@ -14,14 +14,16 @@ import {
   Save, 
   Database,
   Building,
-  AlertOctagon
+  AlertOctagon,
+  Loader2
 } from 'lucide-react';
 import { exportAllDataAsJSON, importDataFromJSON, resetAllDataToSeed } from '../services/storage';
+import { systemApi } from '../services/api';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 import { InboxLogo } from '../components/common/InboxLogo';
 
 export const SettingsPage: React.FC = () => {
-  const { settings, updateSettings, theme, setTheme, addToast } = useApp();
+  const { settings, updateSettings, resetSettings, theme, setTheme, addToast } = useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // SLA Form state
@@ -37,48 +39,106 @@ export const SettingsPage: React.FC = () => {
   const [workspaceName, setWorkspaceName] = useState(settings.workspaceName ?? 'Acme Global Workspace');
   const [notificationsEnabled, setNotificationsEnabled] = useState(settings.notificationsEnabled ?? true);
 
+  // Async action states
+  const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
   // Confirm Reset Modal
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  // Synchronize local form inputs when database settings arrive / change
+  useEffect(() => {
+    if (settings) {
+      setL1Response(settings.slaSettings?.l1ResponseHours ?? 4);
+      setL1Resolution(settings.slaSettings?.l1ResolutionHours ?? 24);
+      setL2Response(settings.slaSettings?.l2ResponseHours ?? 2);
+      setL2Resolution(settings.slaSettings?.l2ResolutionHours ?? 12);
+      setL3Response(settings.slaSettings?.l3ResponseHours ?? 1);
+      setL3Resolution(settings.slaSettings?.l3ResolutionHours ?? 6);
+      setWarningThreshold(settings.slaSettings?.warningThresholdHours ?? 2);
+      setWorkspaceName(settings.workspaceName ?? 'Acme Global Workspace');
+      setNotificationsEnabled(settings.notificationsEnabled ?? true);
+    }
+  }, [settings]);
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateSettings({
-      workspaceName,
-      notificationsEnabled,
-      slaSettings: {
-        l1ResponseHours: Number(l1Response),
-        l1ResolutionHours: Number(l1Resolution),
-        l2ResponseHours: Number(l2Response),
-        l2ResolutionHours: Number(l2Resolution),
-        l3ResponseHours: Number(l3Response),
-        l3ResolutionHours: Number(l3Resolution),
-        warningThresholdHours: Number(warningThreshold),
-      },
-    });
-    addToast('Settings Saved', 'Workspace configuration and SLA policies updated.', 'success');
+    setIsSaving(true);
+    try {
+      await updateSettings({
+        workspaceName,
+        notificationsEnabled,
+        slaSettings: {
+          l1ResponseHours: Number(l1Response),
+          l1ResolutionHours: Number(l1Resolution),
+          l2ResponseHours: Number(l2Response),
+          l2ResolutionHours: Number(l2Resolution),
+          l3ResponseHours: Number(l3Response),
+          l3ResolutionHours: Number(l3Resolution),
+          warningThresholdHours: Number(warningThreshold),
+        },
+      });
+      addToast('Settings Saved', 'Workspace configuration and SLA policies updated successfully.', 'success');
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+      addToast('Save Failed', 'Could not sync settings to server. Saved locally.', 'warning');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleExportJSON = () => {
-    const json = exportAllDataAsJSON();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `inbox-backup-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    addToast('Backup Exported', 'Workspace JSON backup saved.', 'success');
+  const handleExportJSON = async () => {
+    setIsExporting(true);
+    try {
+      const dump = await systemApi.exportDatabase();
+      const jsonStr = JSON.stringify(dump, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `inbox-database-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast('Backup Exported', 'Full PostgreSQL database backup snapshot downloaded.', 'success');
+    } catch (err) {
+      console.warn('[SettingsPage] Backend exportDatabase failed, falling back to local snapshot:', err);
+      const json = exportAllDataAsJSON();
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `inbox-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast('Backup Exported', 'Workspace JSON backup saved.', 'success');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = event => {
+    reader.onload = async event => {
       const content = event.target?.result as string;
+      try {
+        const parsed = JSON.parse(content);
+        const res = await systemApi.importDatabase(parsed);
+        if (res && res.success) {
+          addToast('Import Successful', 'Database restored from backup snapshot.', 'success');
+          setTimeout(() => window.location.reload(), 800);
+          return;
+        }
+      } catch (apiErr) {
+        console.warn('[SettingsPage] Backend importDatabase failed, falling back to local import:', apiErr);
+      }
+
       const success = importDataFromJSON(content);
       if (success) {
-        window.location.reload();
+        addToast('Import Successful', 'Workspace data restored from local backup.', 'success');
+        setTimeout(() => window.location.reload(), 800);
       } else {
         addToast('Import Failed', 'Invalid JSON backup format.', 'error');
       }
@@ -87,7 +147,18 @@ export const SettingsPage: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleResetData = () => {
+  const handleResetData = async () => {
+    setIsResetting(true);
+    try {
+      await systemApi.resetFactory();
+    } catch (err) {
+      console.warn('[SettingsPage] Backend resetFactory failed, attempting resetSettings:', err);
+      try {
+        await resetSettings();
+      } catch {
+        // Fallback to local reset
+      }
+    }
     resetAllDataToSeed();
     window.location.reload();
   };
@@ -316,10 +387,20 @@ export const SettingsPage: React.FC = () => {
         <div className="flex justify-end">
           <button
             type="submit"
-            className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition"
+            disabled={isSaving}
+            className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold shadow-xs transition"
           >
-            <Save size={14} />
-            <span>Save All Configuration</span>
+            {isSaving ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                <span>Saving Configuration...</span>
+              </>
+            ) : (
+              <>
+                <Save size={14} />
+                <span>Save All Configuration</span>
+              </>
+            )}
           </button>
         </div>
       </form>
@@ -340,9 +421,10 @@ export const SettingsPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3 pt-2">
           <button
             onClick={handleExportJSON}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 text-xs font-semibold text-zinc-800 dark:text-zinc-200 shadow-2xs transition"
+            disabled={isExporting}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 disabled:opacity-50 text-xs font-semibold text-zinc-800 dark:text-zinc-200 shadow-2xs transition"
           >
-            <Download size={14} />
+            {isExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
             <span>Export Backup JSON</span>
           </button>
 
@@ -363,9 +445,10 @@ export const SettingsPage: React.FC = () => {
 
           <button
             onClick={() => setIsResetConfirmOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-xs font-semibold text-rose-700 dark:text-rose-300 shadow-2xs transition ml-auto"
+            disabled={isResetting}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 disabled:opacity-50 text-xs font-semibold text-rose-700 dark:text-rose-300 shadow-2xs transition ml-auto"
           >
-            <RotateCcw size={14} />
+            {isResetting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
             <span>Reset Demo Seed Data</span>
           </button>
         </div>

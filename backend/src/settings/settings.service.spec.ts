@@ -83,5 +83,28 @@ describe('SettingsService', () => {
       expect(result.theme).toBe('dark');
     });
   });
+
+  describe('resetSettings', () => {
+    it('should reset workspace settings to defaults', async () => {
+      prisma.settings.findUnique.mockResolvedValue({
+        id: 'singleton',
+        appName: 'Modified App',
+      });
+      prisma.settings.update.mockResolvedValue(DEFAULT_SETTINGS);
+
+      const result = await service.resetSettings();
+
+      expect(prisma.settings.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'singleton' },
+          data: expect.objectContaining({
+            appName: DEFAULT_SETTINGS.appName,
+            workspaceName: DEFAULT_SETTINGS.workspaceName,
+          }),
+        }),
+      );
+      expect(result).toEqual(DEFAULT_SETTINGS);
+    });
+  });
 });
 

@@ -7,7 +7,6 @@ import { Issue } from '../../types';
 describe('SLABadge Component', () => {
   const mockIssue: Issue = {
     id: 'INB-101',
-    key: 'INB-101',
     title: 'Test Issue',
     description: 'Test Description',
     status: 'In Progress',
@@ -16,11 +15,14 @@ describe('SLABadge Component', () => {
     projectId: 'proj-1',
     reporterId: 'user-1',
     assigneeId: 'user-2',
-    supportTier: 'L1',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    firstResponseDue: new Date(Date.now() + 3600000).toISOString(),
-    resolutionDue: new Date(Date.now() + 7200000).toISOString(),
+    supportLevel: 'L1',
+    labels: ['bug'],
+    createdDate: new Date().toISOString(),
+    updatedDate: new Date().toISOString(),
+    escalationHistory: [],
+    attachments: [],
+    resolutionSLAHours: 24,
+    responseSLAHours: 4,
   };
 
   it('should render SLA badge with status', () => {

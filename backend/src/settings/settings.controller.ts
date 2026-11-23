@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Post,
   Body,
   UseGuards,
   HttpCode,
@@ -31,14 +32,26 @@ export class SettingsController {
 
   /**
    * PATCH /api/settings
-   * Update workspace settings. Admin role required.
+   * Update workspace settings. Admin or Project Manager role required.
    */
   @Patch()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.Admin)
+  @Roles(UserRole.Admin, UserRole.Project_Manager)
   @HttpCode(HttpStatus.OK)
   async updateSettings(@Body() dto: UpdateSettingsDto) {
     return this.settingsService.updateSettings(dto);
+  }
+
+  /**
+   * POST /api/settings/reset
+   * Reset workspace settings to defaults. Admin or Project Manager role required.
+   */
+  @Post('reset')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.Admin, UserRole.Project_Manager)
+  @HttpCode(HttpStatus.OK)
+  async resetSettings() {
+    return this.settingsService.resetSettings();
   }
 }
 

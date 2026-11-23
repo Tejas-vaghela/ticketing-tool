@@ -99,14 +99,14 @@ interface AppContextType {
   deleteProject: (id: string) => Promise<void>;
 
   // Sprints
-  createSprint: (data: Omit<Sprint, 'id'>) => Sprint;
+  createSprint: (data: Omit<Sprint, 'id'>) => Promise<Sprint>;
   updateSprint: (id: string, data: Partial<Sprint>) => void;
   startSprint: (id: string) => void;
   completeSprint: (id: string, targetSprintId?: string) => void;
   deleteSprint: (id: string) => void;
 
   // Epics
-  createEpic: (data: Omit<Epic, 'id'>) => Epic;
+  createEpic: (data: Omit<Epic, 'id'>) => Promise<Epic>;
   updateEpic: (id: string, data: Partial<Epic>) => void;
   deleteEpic: (id: string) => void;
 
@@ -122,7 +122,8 @@ interface AppContextType {
   markAllNotificationsRead: () => Promise<void>;
 
   // Settings
-  updateSettings: (newSettings: Partial<Settings>) => void;
+  updateSettings: (newSettings: Partial<Settings>) => Promise<Settings | null>;
+  resetSettings: () => Promise<Settings | null>;
   resetAllData: () => void;
 
   // Filters
@@ -1476,19 +1477,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [notifications, addToast]);
 
   // Settings
-  const updateSettings = useCallback(async (newSettings: Partial<Settings>) => {
+  const updateSettings = useCallback(async (newSettings: Partial<Settings>): Promise<Settings | null> => {
     setSettings(prev => {
       const next = { ...prev, ...newSettings };
       storage.saveSettings(next);
       return next;
     });
     try {
-      await settingsApi.updateSettings(newSettings);
+      const updated = await settingsApi.updateSettings(newSettings);
+      if (updated) {
+        setSettings(updated);
+        storage.saveSettings(updated);
+        return updated;
+      }
     } catch (err) {
       console.warn('[AppContext] Backend updateSettings error, persisted locally:', err);
     }
-    addToast('Settings Saved', 'Preferences have been persisted.', 'success');
-  }, [addToast]);
+    return null;
+  }, []);
+
+  const resetSettings = useCallback(async (): Promise<Settings | null> => {
+    try {
+      const reset = await settingsApi.resetSettings();
+      if (reset) {
+        setSettings(reset);
+        storage.saveSettings(reset);
+        return reset;
+      }
+    } catch (err) {
+      console.warn('[AppContext] Backend resetSettings error, restoring defaults:', err);
+    }
+    const defaultSettings = storage.getSettings();
+    setSettings(defaultSettings);
+    return defaultSettings;
+  }, []);
 
   const resetAllData = useCallback(() => {
     storage.resetToSeedData();
@@ -1615,6 +1637,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notificationsError,
     refreshNotifications,
     updateSettings,
+    resetSettings,
     resetAllData,
     saveFilter,
     deleteFilter,
@@ -1680,6 +1703,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     markNotificationRead,
     markAllNotificationsRead,
     updateSettings,
+    resetSettings,
     resetAllData,
     saveFilter,
     deleteFilter,

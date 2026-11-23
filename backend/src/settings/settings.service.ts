@@ -91,5 +91,30 @@ export class SettingsService {
 
     return updated;
   }
+
+  /**
+   * Resets workspace settings back to default values.
+   */
+  async resetSettings() {
+    await this.getSettings();
+
+    const reset = await this.prisma.settings.update({
+      where: { id: 'singleton' },
+      data: {
+        appName: DEFAULT_SETTINGS.appName,
+        tagline: DEFAULT_SETTINGS.tagline,
+        workspaceName: DEFAULT_SETTINGS.workspaceName,
+        theme: DEFAULT_SETTINGS.theme,
+        notificationsEnabled: DEFAULT_SETTINGS.notificationsEnabled,
+        slaSettings: DEFAULT_SETTINGS.slaSettings,
+        notifications: DEFAULT_SETTINGS.notifications,
+        preferences: DEFAULT_SETTINGS.preferences,
+        slaRules: DEFAULT_SETTINGS.slaRules,
+        rolePageAccess: DEFAULT_SETTINGS.rolePageAccess,
+      },
+    });
+
+    return reset;
+  }
 }
 
